@@ -1,0 +1,29 @@
+/*
+ * 像素风渲染约定
+ *
+ * 逻辑分辨率固定 256×256，缩放只允许整数倍；
+ * 画布与所有精灵使用最近邻采样，避免出现半像素模糊。
+ */
+.stage-host canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* 像素风装饰：硬边框、无圆角、无阴影过渡 */
+.pixel-border {
+  border: 4px solid #2c3a55;
+  box-shadow: 0 0 0 4px #101827;
+  border-radius: 0;
+}
+
+.pixel-muted {
+  color: #8fa6c9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-stage * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

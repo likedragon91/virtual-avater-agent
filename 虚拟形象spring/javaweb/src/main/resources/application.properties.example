@@ -1,0 +1,22 @@
+# 复制本文件为 application.properties 后填入真实值；application.properties 已被 .gitignore 忽略
+# 服务器配置
+server.port=1107
+
+# 数据库配置
+spring.datasource.url=jdbc:mysql://localhost:3306/%E8%99%9A%E6%8B%9F%E5%BD%A2%E8%B1%A1?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+spring.datasource.username=root
+spring.datasource.password=CHANGE_ME
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+
+# Redis 配置（JWT 白名单、验证码、在线会话）
+spring.data.redis.host=127.0.0.1
+spring.data.redis.port=6379
+spring.data.redis.database=0
+spring.data.redis.timeout=3s
+
+# JWT 配置（生产环境请使用足够长且随机的密钥）
+jwt.secret=CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+jwt.expiration=3600000
+jwt.refresh-expiration=86400000
+jwt.header=Authorization
+jwt.token-prefix=Bearer

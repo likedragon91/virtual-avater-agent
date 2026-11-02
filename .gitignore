@@ -1,0 +1,38 @@
+# ================= 依赖与构建产物 =================
+node_modules/
+dist/
+dist-ssr/
+target/
+build/
+out/
+*.class
+*.war
+
+# ================= 本地配置与密钥 =================
+# application.properties 含数据库密码与 JWT 密钥，禁止提交
+application.properties
+application-local.properties
+application-*.properties
+!application.properties.example
+.env
+.env.*
+*.pem
+*.key
+*.jks
+
+# ================= IDE / 编辑器 =================
+.idea/
+.idea_backup/
+.vscode/
+*.iml
+*.iws
+*.ipr
+*.code-workspace
+
+# ================= 日志与系统文件 =================
+*.log
+logs/
+Thumbs.db
+Desktop.ini
+.DS_Store
+~$*

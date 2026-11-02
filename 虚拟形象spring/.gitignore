@@ -1,0 +1,35 @@
+# ================= 构建产物 =================
+target/
+build/
+out/
+*.class
+*.war
+
+# ================= IDE / 编辑器 =================
+.idea/
+.idea_backup/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.code-workspace
+
+# ================= 日志 =================
+*.log
+logs/
+
+# ================= 本地配置与密钥 =================
+# 该文件包含数据库密码和 JWT 密钥，禁止提交；模板见 application.properties.example
+javaweb/src/main/resources/application.properties
+javaweb/src/main/resources/application-local.properties
+javaweb/src/main/resources/application-*.properties
+!javaweb/src/main/resources/application.properties.example
+.env
+*.pem
+*.jks
+
+# ================= 操作系统 / 临时文件 =================
+Thumbs.db
+Desktop.ini
+.DS_Store
+~$*

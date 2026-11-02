@@ -1,0 +1,314 @@
+package com.example.javaweb.Service;
+
+
+import cn.hutool.core.util.IdUtil;
+import com.auth0.jwt.interfaces.DecodedJWT;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.javaweb.DTO.command.UserLoginCommandDTO;
+import com.example.javaweb.DTO.command.UserRegisterCommandDTO;
+import com.example.javaweb.DTO.response.OnlineUserResponseDTO;
+import com.example.javaweb.DTO.response.UserListResponseDTO;
+import com.example.javaweb.DTO.response.UserLoginResponseDTO;
+import com.example.javaweb.entity.user;
+import com.example.javaweb.enumClass.UserStatus;
+import com.example.javaweb.enumClass.UserType;
+import com.example.javaweb.exception.BusinessException;
+import com.example.javaweb.mapper.UserMapper;
+import com.example.javaweb.util.JWTTokenUtil;
+import com.example.javaweb.util.Sm3Util;
+import jakarta.annotation.Resource;
+import org.springframework.stereotype.Service;
+import com.example.javaweb.common.Result;
+import com.example.javaweb.common.ResultCode;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+
+
+@Service
+public class UserService {
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    @Resource
+    private UserMapper userMapper;
+
+    @Resource
+    private JWTTokenUtil jwtTokenUtil;
+
+    @Resource
+    private CaptchaService captchaService;
+
+    @Resource
+    private OnlineUserService onlineUserService;
+
+    @Resource
+    private TokenService tokenService;
+
+    public Result<UserLoginResponseDTO> login(UserLoginCommandDTO commandDTO){
+        //校验验证码（放在最前面，防止密码被暴力枚举）
+        captchaService.verify(commandDTO.getCaptchaId(), commandDTO.getCaptchaCode());
+
+        //构建查询条件
+        LambdaQueryWrapper<user> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(user::getUsername,commandDTO.getUsername())
+                .or()
+                .eq(user::getEmail,commandDTO.getUsername());
+        //调用api查询
+        user user = userMapper.selectOne(queryWrapper);
+
+        //用户不存在
+        if (user == null) {
+            throw new BusinessException("用户名或密码错误");
+        }
+        //密码校验：前端密文 + 该用户的盐 再做一次 SM3，与库中哈希比对
+        String salt = user.getSalt();
+        if (salt == null || salt.isBlank()) {
+            //历史账号（BCrypt 存储）无法用前端 SM3 密文校验，需要重置密码
+            throw new BusinessException("账号密码体系已升级，请联系管理员重置密码");
+        }
+        String passwordHash = Sm3Util.backendEncrypt(commandDTO.getPassword().trim(), salt);
+        if (!Sm3Util.constantTimeEquals(passwordHash, user.getPassword())) {
+            throw new BusinessException("密码错误");
+        }
+
+        //检查用户状态
+        if(!user.isActive()){
+            throw new BusinessException("用户已被禁用，请联系管理员启用");
+        }
+
+        //登录成功：生成带 jti 的 token，写入 Redis 白名单并登记在线会话
+        String jti = IdUtil.fastSimpleUUID();
+        String token = jwtTokenUtil.generateToken(user.getId().toString(), user.getUsername(), user.getUserType(), jti);
+        tokenService.save(jti, user.getId());
+        onlineUserService.register(token, user.getId(), user.getUsername(), user.getUserType());
+
+        //组装返回数据
+        UserLoginResponseDTO dto = new UserLoginResponseDTO();
+        dto.setToken(token);
+        dto.setRoleType(resolve(user.getUserTypeDisplayName(), mapUserType(user.getUserType())));
+
+        dto.setUserInfo(toUserDetail(user));
+
+        return Result.success(dto);
+    }
+
+    //获取当前登录用户信息
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> getMessage(String username){
+        //根据用户名查询用户
+        LambdaQueryWrapper<user> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(user::getUsername, username);
+        user user = userMapper.selectOne(queryWrapper);
+
+        //用户不存在
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+
+        return Result.success(toUserDetail(user));
+    }
+
+    //用户列表（分页，支持按账号/昵称模糊搜索）
+    public Result<UserListResponseDTO> listUsers(long page, long size, String keyword){
+        //分页参数兜底，避免非法值
+        long currentPage = Math.max(page, 1);
+        long pageSize = Math.min(Math.max(size, 1), 100);
+
+        //构建查询条件
+        LambdaQueryWrapper<user> queryWrapper = new LambdaQueryWrapper<>();
+        if (keyword != null && !keyword.isBlank()) {
+            String kw = keyword.trim();
+            queryWrapper.and(wrapper -> wrapper
+                    .like(user::getUsername, kw)
+                    .or()
+                    .like(user::getNickname, kw));
+        }
+
+        //先查总记录数
+        Long total = userMapper.selectCount(queryWrapper);
+
+        //再查当前页数据（pageSize、offset 均为数值，不存在 SQL 注入）
+        long offset = (currentPage - 1) * pageSize;
+        queryWrapper.orderByDesc(user::getId)
+                .last("LIMIT " + pageSize + " OFFSET " + offset);
+        List<user> users = userMapper.selectList(queryWrapper);
+
+        //实体转响应 DTO
+        List<UserLoginResponseDTO.UserDetailResponseDTO> records = users.stream()
+                .map(UserService::toUserDetail)
+                .collect(Collectors.toList());
+
+        UserListResponseDTO result = new UserListResponseDTO();
+        result.setRecords(records);
+        result.setTotal(total);
+        result.setPage(currentPage);
+        result.setSize(pageSize);
+        return Result.success(result);
+    }
+
+    //在线用户列表（仅管理员）
+    public Result<List<OnlineUserResponseDTO>> listOnlineUsers(){
+        List<OnlineUserService.OnlineSession> sessions = onlineUserService.listActive();
+
+        //批量查询用户资料，补充昵称、头像等展示字段
+        Set<Long> userIds = sessions.stream()
+                .map(OnlineUserService.OnlineSession::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, user> userMap = userIds.isEmpty()
+                ? Collections.emptyMap()
+                : userMapper.selectBatchIds(userIds).stream()
+                        .collect(Collectors.toMap(user::getId, Function.identity()));
+
+        //会话转响应 DTO
+        List<OnlineUserResponseDTO> records = sessions.stream()
+                .map(session -> {
+                    OnlineUserResponseDTO dto = new OnlineUserResponseDTO();
+                    dto.setUserId(session.getUserId());
+                    dto.setUsername(session.getUsername());
+                    dto.setLoginTime(session.getLoginTime().format(DATE_TIME_FORMATTER));
+                    dto.setLastActiveTime(session.getLastActiveTime().format(DATE_TIME_FORMATTER));
+
+                    user user = userMap.get(session.getUserId());
+                    if (user != null) {
+                        dto.setNickname(user.getNickname());
+                        dto.setAvatar(user.getAvatar());
+                        dto.setUserType(user.getUserType());
+                        dto.setUserTypeDisplayName(resolve(user.getUserTypeDisplayName(), mapUserType(user.getUserType())));
+                    } else {
+                        dto.setUserType(session.getUserType());
+                        dto.setUserTypeDisplayName(mapUserType(session.getUserType()));
+                    }
+                    return dto;
+                })
+                .collect(Collectors.toList());
+
+        return Result.success(records);
+    }
+
+    //退出登录：撤销 Redis 白名单中的 token，并移除在线会话
+    public void logout(String token){
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        try {
+            DecodedJWT decodedJWT = jwtTokenUtil.verifyToken(token);
+            tokenService.revoke(decodedJWT.getId());
+            onlineUserService.remove(
+                    jwtTokenUtil.getUserId(decodedJWT),
+                    decodedJWT.getClaim("username").asString(),
+                    token);
+        } catch (Exception ignored) {
+            //token 无效或已过期，无需撤销
+        }
+    }
+
+    //把用户实体转换成响应数据（login / register / message 共用）
+    private static UserLoginResponseDTO.UserDetailResponseDTO toUserDetail(user user) {
+        UserLoginResponseDTO.UserDetailResponseDTO userInfo = new UserLoginResponseDTO.UserDetailResponseDTO();
+        userInfo.setId(user.getId());
+        userInfo.setUsername(user.getUsername());
+        userInfo.setEmail(user.getEmail());
+        userInfo.setNickname(user.getNickname());
+        userInfo.setAvatar(user.getAvatar());
+        userInfo.setPhone(user.getPhone());
+        userInfo.setGender(user.getGender());
+        userInfo.setGenderDisplayName(resolve(user.getGenderDisplayName(), mapGender(user.getGender())));
+        userInfo.setBirthday(user.getBirthday() != null ? user.getBirthday().toString() : null);
+        userInfo.setUserType(user.getUserType());
+        userInfo.setUserTypeDisplayName(resolve(user.getUserTypeDisplayName(), mapUserType(user.getUserType())));
+        userInfo.setStatus(user.getStatus());
+        userInfo.setStatusDisplayName(resolve(user.getStatusDisplayName(), mapStatus(user.getStatus())));
+        userInfo.setDisplayName(user.getNickname());
+        userInfo.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().format(DATE_TIME_FORMATTER) : null);
+        userInfo.setUpdatedAt(user.getUpdatedAt() != null ? user.getUpdatedAt().format(DATE_TIME_FORMATTER) : null);
+        return userInfo;
+    }
+
+    //表里的 display_name 列优先，为空时按编码映射兜底
+    private static String resolve(String displayName, String fallback) {
+        return (displayName != null && !displayName.isEmpty()) ? displayName : fallback;
+    }
+
+    //性别：0-未知，1-男，2-女
+    private static String mapGender(Integer gender) {
+        if (gender == null) return null;
+        switch (gender) {
+            case 1: return "男";
+            case 2: return "女";
+            default: return "未知";
+        }
+    }
+
+    //用户类型：1-普通用户，2-管理员，3-VIP
+    private static String mapUserType(Integer userType) {
+        if (userType == null) return null;
+        switch (userType) {
+            case 2: return "管理员";
+            case 3: return "VIP";
+            default: return "普通用户";
+        }
+    }
+
+    //状态：0-禁用，1-正常，2-锁定
+    private static String mapStatus(Integer status) {
+        if (status == null) return null;
+        switch (status) {
+            case 0: return "禁用";
+            case 2: return "锁定";
+            default: return "正常";
+        }
+    }
+
+
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> register(UserRegisterCommandDTO commandDTO){
+        //验证密码是否一致
+        if(!commandDTO.getPassword().equals(commandDTO.getConfirmPassword())){
+            throw new BusinessException("两次输入密码不一致");
+        }
+
+        //验证用户名是否存在
+        LambdaQueryWrapper<user> queryNameWrapper = new LambdaQueryWrapper<>();
+        queryNameWrapper.eq(user::getUsername, commandDTO.getUsername());
+        if(userMapper.selectCount(queryNameWrapper) > 0){
+            throw new BusinessException("用户名已存在");
+        }
+
+        //验证邮箱是否存在
+        LambdaQueryWrapper<user> emailQuery = new LambdaQueryWrapper<>();
+        emailQuery.eq(user::getEmail, commandDTO.getEmail());
+        if(userMapper.selectCount(emailQuery) > 0){
+            throw new BusinessException("邮箱已存在");
+        }
+
+        //创建用户实体
+        user user = new user();
+        user.setUsername(commandDTO.getUsername());
+        user.setEmail(commandDTO.getEmail());
+        user.setNickname(commandDTO.getNickname());
+        user.setPhone(commandDTO.getPhone());
+        //后端第二次加密：随机盐 + 前端 SM3 密文再做 SM3，盐随用户单独保存
+        String salt = Sm3Util.generateSalt();
+        user.setSalt(salt);
+        user.setPassword(Sm3Util.backendEncrypt(commandDTO.getPassword().trim(), salt));
+        user.setGender(commandDTO.getGender());
+        //公开注册一律为普通用户，避免客户端传 userType 自封管理员
+        user.setUserType(UserType.NORMAL.getCode());
+        user.setStatus(UserStatus.ENABLED.getCode());
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
+
+        //入库（MyBatis-Plus 会把自增主键回填到 user.getId()）
+        userMapper.insert(user);
+
+        //组装返回数据
+        return Result.success(toUserDetail(user));
+    }
+}
