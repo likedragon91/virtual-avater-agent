@@ -1,22 +1,65 @@
-# 复制本文件为 application.properties 后填入真实值；application.properties 已被 .gitignore 忽略
+# 复制本文件为 application.properties 后启动；application.properties 已被 .gitignore 忽略
+#
+# ===== 环境变量约定 =====
+# 必填：
+#   DB_PASSWORD          MySQL 密码
+#   JWT_SECRET           JWT 签名密钥，至少 32 字符，可用 openssl rand -base64 48 生成
+# 建议配置：
+#   DEEPSEEK_API_KEY     DeepSeek 密钥（不配置则对话功能不可用）
+# 可选：
+#   SERVER_PORT、DB_URL、DB_USERNAME、REDIS_HOST、REDIS_PORT、REDIS_DATABASE、REDIS_PASSWORD、
+#   WEB_PUSH_PUBLIC_KEY、WEB_PUSH_PRIVATE_KEY、WEB_PUSH_SUBJECT
+
 # 服务器配置
-server.port=1107
+server.port=${SERVER_PORT:1107}
 
 # 数据库配置
-spring.datasource.url=jdbc:mysql://localhost:3306/%E8%99%9A%E6%8B%9F%E5%BD%A2%E8%B1%A1?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
-spring.datasource.username=root
-spring.datasource.password=CHANGE_ME
+spring.datasource.url=${DB_URL:jdbc:mysql://localhost:3306/%E8%99%9A%E6%8B%9F%E5%BD%A2%E8%B1%A1?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8&allowPublicKeyRetrieval=true}
+spring.datasource.username=${DB_USERNAME:root}
+spring.datasource.password=${DB_PASSWORD}
 spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 
 # Redis 配置（JWT 白名单、验证码、在线会话）
-spring.data.redis.host=127.0.0.1
-spring.data.redis.port=6379
-spring.data.redis.database=0
+spring.data.redis.host=${REDIS_HOST:127.0.0.1}
+spring.data.redis.port=${REDIS_PORT:6379}
+spring.data.redis.database=${REDIS_DATABASE:0}
+spring.data.redis.password=${REDIS_PASSWORD:}
 spring.data.redis.timeout=3s
 
-# JWT 配置（生产环境请使用足够长且随机的密钥）
-jwt.secret=CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+# 验证码配置（测试环境可设 captcha.enabled=false 跳过校验）
+captcha.enabled=true
+captcha.expire-seconds=300
+
+# 在线用户配置（超过该分钟数没有请求视为离线）
+online.timeout-minutes=30
+
+# JWT 配置（生产环境通过 JWT_SECRET 注入，不要在文件中写明文）
+jwt.secret=${JWT_SECRET}
 jwt.expiration=3600000
 jwt.refresh-expiration=86400000
 jwt.header=Authorization
 jwt.token-prefix=Bearer
+
+# DeepSeek 配置（密钥只从环境变量 DEEPSEEK_API_KEY 读取）
+deepseek.base-url=https://api.deepseek.com
+deepseek.api-key=${DEEPSEEK_API_KEY:}
+deepseek.model=deepseek-chat
+deepseek.max-tokens=4096
+deepseek.temperature=0.8
+deepseek.connect-timeout-ms=5000
+deepseek.request-timeout-ms=120000
+deepseek.max-retries=1
+deepseek.include-usage=true
+
+# Agent 会话配置
+agent.context.max-messages=20
+agent.context.max-chars=12000
+agent.tool.max-rounds=3
+agent.tool.max-calls-per-round=5
+agent.tool.timeout-ms=5000
+
+# Web Push VAPID（密钥通过环境变量注入）
+webpush.enabled=false
+webpush.vapid.public-key=${WEB_PUSH_PUBLIC_KEY:}
+webpush.vapid.private-key=${WEB_PUSH_PRIVATE_KEY:}
+webpush.vapid.subject=${WEB_PUSH_SUBJECT:mailto:admin@example.com}

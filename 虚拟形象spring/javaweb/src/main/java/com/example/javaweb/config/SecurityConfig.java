@@ -3,7 +3,8 @@ package com.example.javaweb.config;
 import cn.hutool.json.JSONUtil;
 import com.example.javaweb.common.Result;
 import com.example.javaweb.common.ResultCode;
-import com.example.javaweb.filter.JwtAuthenticationFilter;
+import com.example.javaweb.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,6 +49,8 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 //配置请求的授权规则
                 .authorizeHttpRequests(auth -> auth
+                        //SSE 完成时的异步派发不再重复授权（初始请求已经过认证）
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         //公开路径，无需登录即可访问
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         //用户列表、在线用户仅管理员可访问
@@ -85,7 +88,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         // 开发阶段放开所有来源；上线可改为前端具体地址，如 "http://localhost:5173"
         config.setAllowedOriginPatterns(Arrays.asList("*"));
-        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(Arrays.asList("*"));
         // 登录用 JWT（放在请求头），不依赖 Cookie，可设为 false
         config.setAllowCredentials(false);

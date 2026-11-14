@@ -14,7 +14,7 @@ export class AuthError extends Error {
 // 防止并发请求同时触发多次提示和跳转
 let unauthorizedHandling = false
 
-function handleUnauthorized(message) {
+export function handleUnauthorized(message) {
   clearAuth()
   if (unauthorizedHandling) return
   unauthorizedHandling = true

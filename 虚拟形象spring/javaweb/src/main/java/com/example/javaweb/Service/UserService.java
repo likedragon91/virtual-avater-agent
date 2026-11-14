@@ -1,17 +1,17 @@
-package com.example.javaweb.Service;
+package com.example.javaweb.service;
 
 
 import cn.hutool.core.util.IdUtil;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.javaweb.DTO.command.UserLoginCommandDTO;
-import com.example.javaweb.DTO.command.UserRegisterCommandDTO;
-import com.example.javaweb.DTO.response.OnlineUserResponseDTO;
-import com.example.javaweb.DTO.response.UserListResponseDTO;
-import com.example.javaweb.DTO.response.UserLoginResponseDTO;
-import com.example.javaweb.entity.user;
-import com.example.javaweb.enumClass.UserStatus;
-import com.example.javaweb.enumClass.UserType;
+import com.example.javaweb.dto.request.UserLoginCommandDTO;
+import com.example.javaweb.dto.request.UserRegisterCommandDTO;
+import com.example.javaweb.dto.response.OnlineUserResponseDTO;
+import com.example.javaweb.dto.response.UserListResponseDTO;
+import com.example.javaweb.dto.response.UserLoginResponseDTO;
+import com.example.javaweb.entity.User;
+import com.example.javaweb.enums.UserStatus;
+import com.example.javaweb.enums.UserType;
 import com.example.javaweb.exception.BusinessException;
 import com.example.javaweb.mapper.UserMapper;
 import com.example.javaweb.util.JWTTokenUtil;
@@ -57,12 +57,12 @@ public class UserService {
         captchaService.verify(commandDTO.getCaptchaId(), commandDTO.getCaptchaCode());
 
         //构建查询条件
-        LambdaQueryWrapper<user> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(user::getUsername,commandDTO.getUsername())
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getUsername,commandDTO.getUsername())
                 .or()
-                .eq(user::getEmail,commandDTO.getUsername());
+                .eq(User::getEmail,commandDTO.getUsername());
         //调用api查询
-        user user = userMapper.selectOne(queryWrapper);
+        User user = userMapper.selectOne(queryWrapper);
 
         //用户不存在
         if (user == null) {
@@ -103,9 +103,9 @@ public class UserService {
     //获取当前登录用户信息
     public Result<UserLoginResponseDTO.UserDetailResponseDTO> getMessage(String username){
         //根据用户名查询用户
-        LambdaQueryWrapper<user> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(user::getUsername, username);
-        user user = userMapper.selectOne(queryWrapper);
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getUsername, username);
+        User user = userMapper.selectOne(queryWrapper);
 
         //用户不存在
         if (user == null) {
@@ -122,13 +122,13 @@ public class UserService {
         long pageSize = Math.min(Math.max(size, 1), 100);
 
         //构建查询条件
-        LambdaQueryWrapper<user> queryWrapper = new LambdaQueryWrapper<>();
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
         if (keyword != null && !keyword.isBlank()) {
             String kw = keyword.trim();
             queryWrapper.and(wrapper -> wrapper
-                    .like(user::getUsername, kw)
+                    .like(User::getUsername, kw)
                     .or()
-                    .like(user::getNickname, kw));
+                    .like(User::getNickname, kw));
         }
 
         //先查总记录数
@@ -136,9 +136,9 @@ public class UserService {
 
         //再查当前页数据（pageSize、offset 均为数值，不存在 SQL 注入）
         long offset = (currentPage - 1) * pageSize;
-        queryWrapper.orderByDesc(user::getId)
+        queryWrapper.orderByDesc(User::getId)
                 .last("LIMIT " + pageSize + " OFFSET " + offset);
-        List<user> users = userMapper.selectList(queryWrapper);
+        List<User> users = userMapper.selectList(queryWrapper);
 
         //实体转响应 DTO
         List<UserLoginResponseDTO.UserDetailResponseDTO> records = users.stream()
@@ -162,10 +162,10 @@ public class UserService {
                 .map(OnlineUserService.OnlineSession::getUserId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        Map<Long, user> userMap = userIds.isEmpty()
+        Map<Long, User> userMap = userIds.isEmpty()
                 ? Collections.emptyMap()
                 : userMapper.selectBatchIds(userIds).stream()
-                        .collect(Collectors.toMap(user::getId, Function.identity()));
+                        .collect(Collectors.toMap(User::getId, Function.identity()));
 
         //会话转响应 DTO
         List<OnlineUserResponseDTO> records = sessions.stream()
@@ -176,7 +176,7 @@ public class UserService {
                     dto.setLoginTime(session.getLoginTime().format(DATE_TIME_FORMATTER));
                     dto.setLastActiveTime(session.getLastActiveTime().format(DATE_TIME_FORMATTER));
 
-                    user user = userMap.get(session.getUserId());
+                    User user = userMap.get(session.getUserId());
                     if (user != null) {
                         dto.setNickname(user.getNickname());
                         dto.setAvatar(user.getAvatar());
@@ -211,7 +211,7 @@ public class UserService {
     }
 
     //把用户实体转换成响应数据（login / register / message 共用）
-    private static UserLoginResponseDTO.UserDetailResponseDTO toUserDetail(user user) {
+    private static UserLoginResponseDTO.UserDetailResponseDTO toUserDetail(User user) {
         UserLoginResponseDTO.UserDetailResponseDTO userInfo = new UserLoginResponseDTO.UserDetailResponseDTO();
         userInfo.setId(user.getId());
         userInfo.setUsername(user.getUsername());
@@ -275,21 +275,21 @@ public class UserService {
         }
 
         //验证用户名是否存在
-        LambdaQueryWrapper<user> queryNameWrapper = new LambdaQueryWrapper<>();
-        queryNameWrapper.eq(user::getUsername, commandDTO.getUsername());
+        LambdaQueryWrapper<User> queryNameWrapper = new LambdaQueryWrapper<>();
+        queryNameWrapper.eq(User::getUsername, commandDTO.getUsername());
         if(userMapper.selectCount(queryNameWrapper) > 0){
             throw new BusinessException("用户名已存在");
         }
 
         //验证邮箱是否存在
-        LambdaQueryWrapper<user> emailQuery = new LambdaQueryWrapper<>();
-        emailQuery.eq(user::getEmail, commandDTO.getEmail());
+        LambdaQueryWrapper<User> emailQuery = new LambdaQueryWrapper<>();
+        emailQuery.eq(User::getEmail, commandDTO.getEmail());
         if(userMapper.selectCount(emailQuery) > 0){
             throw new BusinessException("邮箱已存在");
         }
 
         //创建用户实体
-        user user = new user();
+        User user = new User();
         user.setUsername(commandDTO.getUsername());
         user.setEmail(commandDTO.getEmail());
         user.setNickname(commandDTO.getNickname());

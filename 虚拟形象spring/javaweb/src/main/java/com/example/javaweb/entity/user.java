@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.example.javaweb.enumClass.UserStatus;
+import com.example.javaweb.enums.UserStatus;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @Data
 @TableName("user")
 //用户实体类
-public class user {
+public class User {
     //主键ID
     @TableId(type = IdType.AUTO)
     private Long id;

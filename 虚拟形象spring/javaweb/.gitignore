@@ -4,6 +4,12 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+### 本地敏感配置（仓库根目录也有同名规则，这里兜底） ###
+src/main/resources/application.properties
+application-local.properties
+application-*.properties
+!application.properties.example
+
 ### STS ###
 .apt_generated
 .classpath

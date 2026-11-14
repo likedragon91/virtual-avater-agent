@@ -1,7 +1,7 @@
 package com.example.javaweb.controller;
 
-import com.example.javaweb.DTO.response.CaptchaResponseDTO;
-import com.example.javaweb.Service.CaptchaService;
+import com.example.javaweb.dto.response.CaptchaResponseDTO;
+import com.example.javaweb.service.CaptchaService;
 import com.example.javaweb.common.Result;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -1,4 +1,4 @@
-package com.example.javaweb.Service;
+package com.example.javaweb.service;
 
 import jakarta.annotation.Resource;
 import lombok.Data;

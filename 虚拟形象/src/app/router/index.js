@@ -39,6 +39,12 @@ const routes = [
         meta: { title: '任务' }
       },
       {
+        path: 'relationship',
+        name: 'Relationship',
+        component: () => import('@/features/relationship/views/RelationshipView.vue'),
+        meta: { title: '关系' }
+      },
+      {
         path: 'memory',
         name: 'Memory',
         component: () => import('@/features/memory/views/MemoryView.vue'),

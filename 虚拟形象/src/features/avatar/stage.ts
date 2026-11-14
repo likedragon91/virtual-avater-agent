@@ -41,10 +41,26 @@ export function getStageScale(container: HTMLElement): number {
   return Math.max(1, Math.floor(width / STAGE_SIZE))
 }
 
-/** 以 CSS 整数倍放大画布，保持像素锐利 */
-export function fitStage(container: HTMLElement, canvas: HTMLCanvasElement): number {
-  const scale = getStageScale(container)
-  canvas.style.width = `${STAGE_SIZE * scale}px`
-  canvas.style.height = `${STAGE_SIZE * scale}px`
-  return scale
+/**
+ * 让画布适配容器。
+ *
+ * - 默认按宽度取整数倍，保证像素严格对齐；
+ * - fill 模式下同时考虑宽高，用最大可用倍率撑满舞台（允许小数倍），
+ *   并保留 image-rendering: pixelated，避免像素边缘发虚。
+ */
+export function fitStage(
+  container: HTMLElement,
+  canvas: HTMLCanvasElement,
+  { fill = false, gutter = 0 }: { fill?: boolean; gutter?: number } = {}
+): number {
+  const width = (container.clientWidth || STAGE_SIZE) - gutter
+  const height = (container.clientHeight || STAGE_SIZE) - gutter
+  const scale = fill
+    ? Math.max(1, Math.min(width, height) / STAGE_SIZE)
+    : Math.max(1, Math.floor(width / STAGE_SIZE))
+
+  const rounded = Math.round(scale * 100) / 100
+  canvas.style.width = `${STAGE_SIZE * rounded}px`
+  canvas.style.height = `${STAGE_SIZE * rounded}px`
+  return rounded
 }

@@ -1,7 +1,6 @@
 package com.example.javaweb.common;
 
 import lombok.Data;
-import lombok.Getter;
 
 @Data
 public class Result<T> {

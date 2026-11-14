@@ -1,9 +1,9 @@
-package com.example.javaweb.Service;
+package com.example.javaweb.service;
 
 import cn.hutool.captcha.CaptchaUtil;
 import cn.hutool.captcha.LineCaptcha;
 import cn.hutool.core.util.IdUtil;
-import com.example.javaweb.DTO.response.CaptchaResponseDTO;
+import com.example.javaweb.dto.response.CaptchaResponseDTO;
 import com.example.javaweb.exception.BusinessException;
 import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Value;

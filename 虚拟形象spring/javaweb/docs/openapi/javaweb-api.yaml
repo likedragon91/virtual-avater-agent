@@ -1,0 +1,2414 @@
+openapi: 3.0.3
+info:
+  title: 虚拟形象 Agent 后端 API
+  version: 1.0.0
+  description: |
+    虚拟形象 Agent 项目后端完整接口定义，可直接导入 Apifox。
+
+    **导入约定**
+    - 前置 URL 已写为 `http://127.0.0.1:1107/api`。
+    - 下方所有 `paths` 均相对于 `/api`，例如 `/user/login`，不要再写 `/api` 前缀。
+    - 需要登录的接口统一使用请求头 `Authorization: Bearer <JWT>`。
+    - 统一响应格式为 `{"code":"200","msg":"操作成功","data":...}`。
+    - 未登录/登录过期返回 **HTTP 401**；已登录但无权限返回 **HTTP 403**。
+    - 参数校验失败、业务错误返回 **HTTP 200**，响应体中的 `code` 非 `"200"`
+      （参数校验失败 `code="-2"`，业务错误为具体业务码）。
+    - SSE 接口需要携带 Authorization 头，浏览器原生 `EventSource` 无法设置请求头，
+      必须使用 `fetch + ReadableStream` 接收。
+servers:
+  - url: http://127.0.0.1:1107/api
+    description: 本地开发（Apifox 前置 URL）
+tags:
+  - name: 账号
+    description: 登录、注册、用户信息、用户列表、在线用户、退出登录
+  - name: 验证码
+    description: 图形验证码
+  - name: Agent 会话
+    description: 会话管理、历史消息、SSE 流式对话、停止生成
+  - name: 任务与闹钟
+    description: 任务 CRUD、提醒实例、完成度回应
+  - name: 亲密度
+    description: 当前关系状态与成长流水
+  - name: 人格
+    description: 人格预设、用户默认人格与风格特质
+  - name: 通知
+    description: 站内通知列表、未读数、已读、SSE 实时推送
+  - name: 通知设置
+    description: 免打扰窗口、主动消息开关
+  - name: Web Push
+    description: 浏览器推送订阅与测试
+security:
+  - bearerAuth: []
+paths:
+  /user/login:
+    post:
+      tags: [账号]
+      summary: 登录
+      operationId: userLogin
+      security: []
+      description: |
+        公开接口。密码为前端 SM3 后的 64 位十六进制摘要，不是明文。
+        验证码由 `GET /user/captcha` 获取；开启验证码时 captchaId/captchaCode 必传。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: admin
+              password: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+              captchaId: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+              captchaCode: A1B2
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultLogin'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  token: eyJhbGciOiJIUzI1NiJ9.xxx.yyy
+                  roleType: 管理员
+                  userInfo:
+                    id: 1
+                    username: admin
+                    email: admin@example.com
+                    nickname: kk
+                    avatar: /files/bussiness/user_avatar/1757687320361.jpg
+                    phone: "19999525252"
+                    gender: 1
+                    genderDisplayName: 男
+                    birthday: "2019-09-02"
+                    userType: 2
+                    userTypeDisplayName: 管理员
+                    status: 1
+                    statusDisplayName: 启用
+                    displayName: kk
+                    createdAt: "2025-08-30 12:00:01"
+                    updatedAt: "2026-07-10 10:47:02"
+  /user/register:
+    post:
+      tags: [账号]
+      summary: 注册
+      operationId: userRegister
+      security: []
+      description: 公开接口。注册用户类型固定为普通用户（1）；password 与 confirmPassword 均为前端 SM3 摘要。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              username: test_user
+              email: test@example.com
+              nickname: 小测
+              phone: "13800138000"
+              password: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+              confirmPassword: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+              gender: 1
+              userType: 1
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultUserDetail'
+  /user/captcha:
+    get:
+      tags: [验证码]
+      summary: 获取图形验证码
+      operationId: getCaptcha
+      security: []
+      description: 返回 captchaId 与 PNG 图片的 Base64 Data URI，可直接用于 `<img src>`。
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultCaptcha'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  captchaId: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+                  captchaImage: data:image/png;base64,iVBORw0KGgo...
+  /user/message:
+    get:
+      tags: [账号]
+      summary: 获取用户信息
+      operationId: getUserMessage
+      description: 传 `username` 时查询指定用户；不传时返回当前登录用户信息。
+      parameters:
+        - name: username
+          in: query
+          required: false
+          description: 要查询的用户名；不传则查询当前登录用户
+          schema:
+            type: string
+            maxLength: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultUserDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /user/list:
+    get:
+      tags: [账号]
+      summary: 用户列表（管理员）
+      operationId: listUsers
+      description: 需要管理员权限（userType=2）。
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: 页码，从 1 开始
+          schema:
+            type: integer
+            format: int64
+            default: 1
+            minimum: 1
+        - name: size
+          in: query
+          required: false
+          description: 每页条数
+          schema:
+            type: integer
+            format: int64
+            default: 10
+            minimum: 1
+        - name: keyword
+          in: query
+          required: false
+          description: 用户名/昵称/邮箱等关键字
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultUserPage'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  records:
+                    - id: 1
+                      username: admin
+                      email: admin@example.com
+                      nickname: kk
+                      avatar: null
+                      phone: null
+                      gender: 1
+                      genderDisplayName: 男
+                      birthday: null
+                      userType: 2
+                      userTypeDisplayName: 管理员
+                      status: 1
+                      statusDisplayName: 启用
+                      displayName: kk
+                      createdAt: "2025-08-30 12:00:01"
+                      updatedAt: "2026-07-10 10:47:02"
+                  total: 1
+                  page: 1
+                  size: 10
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /user/online:
+    get:
+      tags: [账号]
+      summary: 在线用户列表（管理员）
+      operationId: listOnlineUsers
+      description: 需要管理员权限（userType=2）。
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOnlineUserList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /user/logout:
+    post:
+      tags: [账号]
+      summary: 退出登录
+      operationId: userLogout
+      description: 使当前 token 立即失效并从在线列表移除。
+      responses:
+        '200':
+          description: 退出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /agent/sessions:
+    post:
+      tags: [Agent 会话]
+      summary: 新建会话
+      operationId: createAgentSession
+      description: 创建一个新的 Agent 会话。标题和人格编码都可省略。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+            example:
+              title: 新的对话
+              personaCode: default
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultChatSession'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  id: 1
+                  title: 新的对话
+                  personaCode: default
+                  status: 1
+                  messageCount: 0
+                  lastActiveAt: "2026-11-12 20:00:00"
+                  createdAt: "2026-11-12 20:00:00"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags: [Agent 会话]
+      summary: 会话列表
+      operationId: listAgentSessions
+      description: 按最后活跃时间倒序返回当前用户的正常会话。
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: 页码，从 1 开始
+          schema:
+            type: integer
+            format: int64
+            default: 1
+            minimum: 1
+        - name: size
+          in: query
+          required: false
+          description: 每页条数，最大 50
+          schema:
+            type: integer
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultSessionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /agent/sessions/{id}:
+    get:
+      tags: [Agent 会话]
+      summary: 会话详情
+      operationId: getAgentSession
+      description: 只允许访问当前用户自己的会话；不存在或越权时返回业务错误。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultChatSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [Agent 会话]
+      summary: 重命名 / 归档 / 切换会话人格
+      operationId: updateAgentSession
+      description: 只更新传入的字段。status 传 0 表示归档，归档会话不再出现在列表中，也不能继续发消息。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionRequest'
+            example:
+              title: 周报与面试
+              status: 1
+              personaCode: persona_warm
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultChatSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Agent 会话]
+      summary: 删除会话
+      operationId: deleteAgentSession
+      description: 物理删除会话，消息与工具调用日志由数据库外键级联删除。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /agent/sessions/{id}/messages:
+    get:
+      tags: [Agent 会话]
+      summary: 历史消息
+      operationId: listAgentMessages
+      description: |
+        按时间升序返回。cursor 为空时取最新一页；继续向前翻页时，把上一页的 nextCursor 传回。
+        只返回 user / assistant 消息；生成中（status=0）的消息不返回。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: cursor
+          in: query
+          required: false
+          description: 上一页返回的 nextCursor；不传表示最新一页
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+        - name: size
+          in: query
+          required: false
+          description: 每页条数，最大 50
+          schema:
+            type: integer
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultMessagePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /agent/sessions/{id}/messages/stream:
+    post:
+      tags: [Agent 会话]
+      summary: 发送消息并流式回答（SSE）
+      operationId: streamAgentMessage
+      description: |
+        发送一条用户消息，通过 SSE 返回 Agent 的流式回答。
+
+        **必须使用 fetch + ReadableStream 接收**，浏览器原生 EventSource 不能携带 Authorization 头。
+
+        事件顺序：
+        - `meta`：`{runId, sessionId, assistantMessageId}`
+        - `delta`：`{text}`，可多次
+        - `tool_start`：`{callId, tool}`
+        - `tool_end`：`{callId, ok, summary}`
+        - `done`：`{runId, messageId, finishReason, usage.completionTokens}`
+        - `error`：`{code, msg}`
+
+        每个 `data` 都是 JSON 字符串，事件之间以空行分隔。
+        流建立前的业务错误（越权、重复发送、已归档等）返回 `application/json`。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+            example:
+              content: 我这周还有什么任务？
+              clientMessageId: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+      responses:
+        '200':
+          description: SSE 流；若在流建立前失败，则返回 application/json
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stream:
+                  summary: 一次带工具调用的完整流
+                  value: |
+                    event: meta
+                    data: {"runId":12,"sessionId":1,"assistantMessageId":12}
+
+                    event: delta
+                    data: {"text":"我先看看"}
+
+                    event: tool_start
+                    data: {"callId":"call_1","tool":"query_tasks"}
+
+                    event: tool_end
+                    data: {"callId":"call_1","ok":true,"summary":"找到 3 个任务"}
+
+                    event: delta
+                    data: {"text":"你这周还有 3 个任务。"}
+
+                    event: done
+                    data: {"runId":12,"messageId":12,"finishReason":"stop","usage":{"completionTokens":256}}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: DUPLICATE_MESSAGE
+                msg: 请勿重复发送同一条消息
+                data: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /agent/runs/{runId}/cancel:
+    post:
+      tags: [Agent 会话]
+      summary: 停止生成
+      operationId: cancelAgentRun
+      description: runId 即 assistant 消息 id（SSE meta 事件中的 assistantMessageId）。
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          description: assistant 消息 id
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 已受理；若运行已结束则不做事
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /tasks:
+    post:
+      tags: [任务与闹钟]
+      summary: 新建任务
+      operationId: createTask
+      description: 创建事务闹钟任务，并根据 rrule 生成未来 30 天的提醒实例。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+            example:
+              title: 提交周报
+              note: 周五下班前提交
+              dueAt: "2026-11-20 18:00:00"
+              tz: Asia/Shanghai
+              rrule: FREQ=WEEKLY;BYDAY=FR
+              priority: 2
+              responseWindowMinutes: 120
+              allowNote: true
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags: [任务与闹钟]
+      summary: 任务列表
+      operationId: listTasks
+      description: 按状态分页查询任务。`status` 不传默认 ACTIVE；传空字符串表示不过滤。
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 1
+            minimum: 1
+        - name: size
+          in: query
+          required: false
+          description: 每页条数，最大 50
+          schema:
+            type: integer
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 50
+        - name: status
+          in: query
+          required: false
+          description: 任务状态；不传默认 ACTIVE，空字符串表示全部
+          schema:
+            type: string
+            enum: [ACTIVE, PAUSED, ARCHIVED]
+            default: ACTIVE
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultTaskPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /tasks/{id}:
+    get:
+      tags: [任务与闹钟]
+      summary: 任务详情
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [任务与闹钟]
+      summary: 更新任务
+      operationId: updateTask
+      description: 只更新传入的字段；修改时间或重复规则后会重新生成提醒实例。
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+            example:
+              title: 提交周报（改期）
+              dueAt: "2026-11-21 18:00:00"
+              priority: 3
+              status: ACTIVE
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [任务与闹钟]
+      summary: 归档任务
+      operationId: archiveTask
+      description: 将任务状态置为 ARCHIVED，并删除其待提醒实例。
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 归档成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /task-occurrences:
+    get:
+      tags: [任务与闹钟]
+      summary: 提醒实例列表
+      operationId: listTaskOccurrences
+      description: 查询当前用户的任务提醒实例，可按时间范围与状态过滤。
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: 起始时间，支持 yyyy-MM-dd / yyyy-MM-dd HH:mm / ISO
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: 结束时间，格式同上
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: 状态，多个用逗号分隔
+          schema:
+            type: string
+            example: PENDING,RINGING
+        - name: limit
+          in: query
+          required: false
+          description: 返回条数，1~100
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultOccurrenceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /task-occurrences/{id}/response:
+    post:
+      tags: [任务与闹钟]
+      summary: 回应提醒（完成度）
+      operationId: respondTaskOccurrence
+      description: 提交完成度并结算亲密度。idempotencyKey 由客户端生成，用于幂等。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 提醒实例 id
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRespondRequest'
+            example:
+              completionRatio: 80
+              note: 已完成大部分
+              idempotencyKey: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+      responses:
+        '200':
+          description: 回应成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultTaskResponseResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /relationship:
+    get:
+      tags: [亲密度]
+      summary: 当前关系状态
+      operationId: getRelationship
+      description: 返回亲密度总分、阶段、今日进度、连续天数等。
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultRelationship'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  intimacyTotal: 120.5
+                  stageCode: ACQUAINTANCE
+                  stageName: 熟悉
+                  stageSince: "2026-11-01 10:00:00"
+                  nextStageCode: FRIEND
+                  nextStageName: 朋友
+                  nextThreshold: 300
+                  progressPercent: 40.2
+                  todayGained: 12
+                  dailyCap: 50
+                  taskCountToday: 3
+                  maxDailyTasks: 10
+                  streakDays: 5
+                  userCapStage: ACQUAINTANCE
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /relationship/logs:
+    get:
+      tags: [亲密度]
+      summary: 亲密度流水
+      operationId: listIntimacyLogs
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 1
+            minimum: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultIntimacyLogPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /persona/options:
+    get:
+      tags: [人格]
+      summary: 人格预设列表
+      operationId: listPersonaOptions
+      description: 返回内置人格预设及默认风格特质。按当前 Security 配置需要登录。
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPersonaOptionList'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  - code: persona_default
+                    name: 默认
+                    description: 自然、温和的陪伴
+                    sample: 我在呢，慢慢说。
+                    defaultTraits:
+                      warmth: 0.5
+                      humor: 0.3
+                      directness: 0.5
+                      initiative: 0.5
+                      verbosity: 0.5
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /persona:
+    get:
+      tags: [人格]
+      summary: 当前用户人格
+      operationId: getCurrentPersona
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPersonaCurrent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [人格]
+      summary: 保存用户默认人格
+      operationId: saveCurrentPersona
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePersonaRequest'
+            example:
+              personaCode: persona_warm
+              traits:
+                warmth: 0.8
+                humor: 0.3
+                directness: 0.4
+                initiative: 0.5
+                verbosity: 0.5
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPersonaCurrent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications:
+    get:
+      tags: [通知]
+      summary: 通知列表
+      operationId: listNotifications
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 1
+            minimum: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultNotificationPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/unread-count:
+    get:
+      tags: [通知]
+      summary: 未读通知数
+      operationId: getUnreadNotificationCount
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultLong'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/{id}/read:
+    post:
+      tags: [通知]
+      summary: 标记单条已读
+      operationId: markNotificationRead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 通知 id
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /notifications/read-all:
+    post:
+      tags: [通知]
+      summary: 全部标记已读
+      operationId: markAllNotificationsRead
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/stream:
+    get:
+      tags: [通知]
+      summary: 通知实时推送（SSE）
+      operationId: streamNotifications
+      description: |
+        建立长连接，接收站内通知。需要 Authorization 头，
+        因此必须使用 fetch + ReadableStream 接收，不能使用原生 EventSource。
+
+        事件：
+        - `connected`：`{"ok":true}`
+        - `notification`：通知对象（Notification）
+        - `ping`：`{"ts":1730000000000}`，每 30 秒一次心跳
+      responses:
+        '200':
+          description: SSE 流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stream:
+                  value: |
+                    event: connected
+                    data: {"ok":true}
+
+                    event: notification
+                    data: {"id":1,"type":"TASK_RINGING","title":"任务提醒","body":"该提交周报了","payload":{},"read":false,"createdAt":"2026-11-13 18:00:00"}
+
+                    event: ping
+                    data: {"ts":1730000000000}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/settings:
+    get:
+      tags: [通知设置]
+      summary: 获取通知设置
+      operationId: getNotificationSettings
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultNotificationSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [通知设置]
+      summary: 保存通知设置
+      operationId: saveNotificationSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationSettingsRequest'
+            example:
+              dndEnabled: true
+              dndStart: "22:00"
+              dndEnd: "08:00"
+              proactiveEnabled: true
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultNotificationSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications/push/public-key:
+    get:
+      tags: [Web Push]
+      summary: 获取 VAPID 公钥
+      operationId: getPushPublicKey
+      description: 前端订阅浏览器推送前调用，返回 enabled 与 publicKey。
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPushPublicKey'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/push/subscribe:
+    post:
+      tags: [Web Push]
+      summary: 订阅浏览器推送
+      operationId: subscribePush
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushSubscribeRequest'
+            example:
+              endpoint: https://fcm.googleapis.com/fcm/send/xxx
+              keys:
+                p256dh: BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM
+                auth: tBHItJI5svbpez7KI4CCXg
+              userAgent: Mozilla/5.0 ...
+      responses:
+        '200':
+          description: 订阅成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/push/unsubscribe:
+    post:
+      tags: [Web Push]
+      summary: 取消浏览器推送订阅
+      operationId: unsubscribePush
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushUnsubscribeRequest'
+            example:
+              endpoint: https://fcm.googleapis.com/fcm/send/xxx
+      responses:
+        '200':
+          description: 取消成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /notifications/push/test:
+    post:
+      tags: [Web Push]
+      summary: 发送测试推送
+      operationId: sendTestPush
+      description: 向当前用户所有有效订阅发送一条测试推送，返回发送数量。
+      responses:
+        '200':
+          description: 发送完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultInteger'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SessionId:
+      name: id
+      in: path
+      required: true
+      description: 会话 id
+      schema:
+        type: integer
+        format: int64
+    TaskId:
+      name: id
+      in: path
+      required: true
+      description: 任务 id
+      schema:
+        type: integer
+        format: int64
+  responses:
+    Unauthorized:
+      description: 未登录或 token 失效（HTTP 401）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "401"
+            msg: 未登录或登录已过期
+            data: null
+    Forbidden:
+      description: 已登录但没有访问权限（HTTP 403）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "403"
+            msg: 没有访问权限
+            data: null
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          maxLength: 50
+          description: 用户名或邮箱
+          example: admin
+        password:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+          description: 前端 SM3 后的 64 位十六进制摘要（不是明文密码）
+          example: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        captchaId:
+          type: string
+          maxLength: 64
+          description: 验证码标识，来自 GET /user/captcha
+          example: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+        captchaCode:
+          type: string
+          maxLength: 10
+          description: 用户输入的验证码
+          example: A1B2
+    RegisterRequest:
+      type: object
+      required: [username, email, password, confirmPassword]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          pattern: '^[a-zA-Z0-9_]+$'
+          description: 只能包含字母、数字和下划线
+          example: test_user
+        email:
+          type: string
+          format: email
+          maxLength: 50
+          example: test@example.com
+        nickname:
+          type: string
+          maxLength: 50
+          example: 小测
+        phone:
+          type: string
+          pattern: '^1[3456789]\d{9}$'
+          description: 中国大陆手机号
+          example: "13800138000"
+        password:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+          description: 前端 SM3 后的 64 位十六进制摘要
+          example: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        confirmPassword:
+          type: string
+          description: 确认密码（同样为 SM3 摘要，需与 password 一致）
+          example: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        gender:
+          type: integer
+          description: 0-未知，1-男，2-女
+          enum: [0, 1, 2]
+          example: 1
+        userType:
+          type: integer
+          description: 公开注册固定为 1（普通用户），该字段不再生效
+          example: 1
+    LoginData:
+      type: object
+      properties:
+        token:
+          type: string
+          description: "JWT，后续请求放入 Authorization: Bearer <token>"
+        roleType:
+          type: string
+          description: 角色显示名，如 普通用户 / 管理员 / VIP
+          example: 管理员
+        userInfo:
+          $ref: '#/components/schemas/UserDetail'
+    UserDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: admin
+        email:
+          type: string
+          nullable: true
+          example: admin@example.com
+        nickname:
+          type: string
+          nullable: true
+          example: kk
+        avatar:
+          type: string
+          nullable: true
+          example: /files/bussiness/user_avatar/1757687320361.jpg
+        phone:
+          type: string
+          nullable: true
+          example: "19999525252"
+        gender:
+          type: integer
+          nullable: true
+          description: 0-未知，1-男，2-女
+          example: 1
+        genderDisplayName:
+          type: string
+          nullable: true
+          example: 男
+        birthday:
+          type: string
+          nullable: true
+          description: yyyy-MM-dd
+          example: "2019-09-02"
+        userType:
+          type: integer
+          description: 1-普通用户，2-管理员，3-VIP
+          enum: [1, 2, 3]
+          example: 2
+        userTypeDisplayName:
+          type: string
+          example: 管理员
+        status:
+          type: integer
+          description: 0-禁用，1-启用
+          enum: [0, 1]
+          example: 1
+        statusDisplayName:
+          type: string
+          example: 启用
+        displayName:
+          type: string
+          example: kk
+        createdAt:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2025-08-30 12:00:01"
+        updatedAt:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2026-07-10 10:47:02"
+    UserPage:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDetail'
+        total:
+          type: integer
+          format: int64
+          example: 1
+        page:
+          type: integer
+          format: int64
+          example: 1
+        size:
+          type: integer
+          format: int64
+          example: 10
+    OnlineUser:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: admin
+        nickname:
+          type: string
+          nullable: true
+          example: kk
+        avatar:
+          type: string
+          nullable: true
+        userType:
+          type: integer
+          description: 1-普通用户，2-管理员，3-VIP
+          enum: [1, 2, 3]
+          example: 2
+        userTypeDisplayName:
+          type: string
+          example: 管理员
+        loginTime:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2026-11-13 09:00:00"
+        lastActiveTime:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2026-11-13 09:30:00"
+    Captcha:
+      type: object
+      properties:
+        captchaId:
+          type: string
+          description: 验证码唯一标识，登录时原样回传
+          example: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+        captchaImage:
+          type: string
+          description: PNG 图片的 Base64 Data URI
+          example: data:image/png;base64,iVBORw0KGgo...
+
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 120
+          description: 会话标题，省略时默认「新的对话」
+          example: 新的对话
+        personaCode:
+          type: string
+          maxLength: 32
+          description: 人格编码，省略时使用 default（跟随用户默认人格）
+          example: default
+    UpdateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 120
+          example: 周报与面试
+        status:
+          type: integer
+          description: 1-正常，0-归档
+          enum: [0, 1]
+          example: 1
+        personaCode:
+          type: string
+          maxLength: 32
+          description: 会话级人格；default 表示跟随用户默认人格
+          example: default
+    SendMessageRequest:
+      type: object
+      required: [content, clientMessageId]
+      properties:
+        content:
+          type: string
+          maxLength: 8000
+          description: 消息正文
+          example: 我这周还有什么任务？
+        clientMessageId:
+          type: string
+          maxLength: 64
+          description: 客户端生成的幂等键，建议 UUID；重试时不要复用
+          example: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+    ChatSession:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        title:
+          type: string
+          example: 新的对话
+        personaCode:
+          type: string
+          example: default
+        status:
+          type: integer
+          description: 1-正常，0-归档
+          enum: [0, 1]
+          example: 1
+        messageCount:
+          type: integer
+          example: 4
+        lastActiveAt:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2026-11-12 20:05:00"
+        createdAt:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2026-11-12 20:00:00"
+    SessionPage:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatSession'
+        total:
+          type: integer
+          format: int64
+          example: 1
+        page:
+          type: integer
+          format: int64
+          example: 1
+        size:
+          type: integer
+          format: int64
+          example: 20
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 11
+        senderRole:
+          type: string
+          enum: [user, assistant]
+          example: assistant
+        content:
+          type: string
+          example: 你这周还有 3 个任务……
+        contentType:
+          type: string
+          example: text
+        status:
+          type: integer
+          description: 1-完成，2-失败，3-已取消；历史消息不返回生成中的 0
+          enum: [1, 2, 3]
+          example: 1
+        tokens:
+          type: integer
+          nullable: true
+          example: 256
+        model:
+          type: string
+          nullable: true
+          example: deepseek-chat
+        createdAt:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2026-11-12 20:03:05"
+    MessagePage:
+      type: object
+      properties:
+        records:
+          type: array
+          description: 按时间升序
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        nextCursor:
+          type: integer
+          format: int64
+          nullable: true
+          description: 继续向前翻页时传回；为空表示没有更早的消息
+          example: 10
+        hasMore:
+          type: boolean
+          example: true
+
+    CreateTaskRequest:
+      type: object
+      required: [title, dueAt]
+      properties:
+        title:
+          type: string
+          maxLength: 200
+          example: 提交周报
+        note:
+          type: string
+          maxLength: 2000
+          example: 周五下班前提交
+        dueAt:
+          type: string
+          description: 截止时间，支持 yyyy-MM-dd HH:mm:ss / yyyy-MM-dd HH:mm / ISO / yyyy-MM-dd
+          example: "2026-11-20 18:00:00"
+        tz:
+          type: string
+          maxLength: 64
+          description: 时区，默认 Asia/Shanghai
+          example: Asia/Shanghai
+        rrule:
+          type: string
+          maxLength: 255
+          description: iCalendar 风格重复规则
+          example: FREQ=WEEKLY;BYDAY=FR
+        priority:
+          type: integer
+          description: 1-低，2-普通，3-高，默认 2
+          enum: [1, 2, 3]
+          example: 2
+        responseWindowMinutes:
+          type: integer
+          description: 回应窗口（分钟），15~720，默认 120
+          minimum: 15
+          maximum: 720
+          example: 120
+        allowNote:
+          type: boolean
+          description: 回应时是否允许填写备注
+          example: true
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        note:
+          type: string
+          maxLength: 2000
+          description: 传空字符串表示清空备注
+        dueAt:
+          type: string
+          description: 截止时间，格式同创建接口
+        tz:
+          type: string
+          maxLength: 64
+        rrule:
+          type: string
+          maxLength: 255
+        priority:
+          type: integer
+          enum: [1, 2, 3]
+        responseWindowMinutes:
+          type: integer
+          minimum: 15
+          maximum: 720
+        allowNote:
+          type: boolean
+        status:
+          type: string
+          description: 任务状态
+          enum: [ACTIVE, PAUSED, ARCHIVED]
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        title:
+          type: string
+          example: 提交周报
+        note:
+          type: string
+          nullable: true
+          example: 周五下班前提交
+        dueAt:
+          type: string
+          description: yyyy-MM-dd HH:mm:ss
+          example: "2026-11-20 18:00:00"
+        tz:
+          type: string
+          example: Asia/Shanghai
+        rrule:
+          type: string
+          nullable: true
+          example: FREQ=WEEKLY;BYDAY=FR
+        rruleLabel:
+          type: string
+          nullable: true
+          description: 重复规则的可读文案
+        priority:
+          type: integer
+          enum: [1, 2, 3]
+          example: 2
+        priorityLabel:
+          type: string
+          example: 普通
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED, ARCHIVED]
+          example: ACTIVE
+        statusLabel:
+          type: string
+          example: 进行中
+        source:
+          type: string
+          description: 任务来源，如 manual / agent
+          example: manual
+        responseWindowMinutes:
+          type: integer
+          example: 120
+        allowNote:
+          type: boolean
+          example: true
+        nextOccurrenceId:
+          type: integer
+          format: int64
+          nullable: true
+          example: 10
+        nextOccurrenceAt:
+          type: string
+          nullable: true
+          example: "2026-11-20 18:00:00"
+        nextOccurrenceStatus:
+          type: string
+          nullable: true
+          enum: [PENDING, RINGING, RESPONDED, MISSED, CANCELED]
+        createdAt:
+          type: string
+          example: "2026-11-13 10:00:00"
+    TaskPage:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        total:
+          type: integer
+          format: int64
+          example: 1
+        page:
+          type: integer
+          format: int64
+          example: 1
+        size:
+          type: integer
+          format: int64
+          example: 20
+    Occurrence:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        taskId:
+          type: integer
+          format: int64
+          example: 1
+        title:
+          type: string
+          example: 提交周报
+        note:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+          enum: [1, 2, 3]
+          example: 2
+        priorityLabel:
+          type: string
+          example: 普通
+        occurAt:
+          type: string
+          description: 提醒时间，yyyy-MM-dd HH:mm:ss
+          example: "2026-11-20 18:00:00"
+        expiresAt:
+          type: string
+          description: 回应截止时间
+          example: "2026-11-20 20:00:00"
+        status:
+          type: string
+          enum: [PENDING, RINGING, RESPONDED, MISSED, CANCELED]
+          example: RINGING
+        statusLabel:
+          type: string
+          example: 待回应
+        respondedAt:
+          type: string
+          nullable: true
+        responseWindowMinutes:
+          type: integer
+          example: 120
+        canRespond:
+          type: boolean
+          example: true
+        canCorrect:
+          type: boolean
+          description: 回应后 10 分钟内允许修正
+          example: true
+        late:
+          type: boolean
+          example: false
+        completionRatio:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+          example: 80
+        responseNote:
+          type: string
+          nullable: true
+        intimacyDelta:
+          type: number
+          format: double
+          nullable: true
+          example: 4.5
+    TaskRespondRequest:
+      type: object
+      required: [completionRatio, idempotencyKey]
+      properties:
+        completionRatio:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 完成度百分比
+          example: 80
+        note:
+          type: string
+          maxLength: 100
+          example: 已完成大部分
+        idempotencyKey:
+          type: string
+          maxLength: 64
+          description: 客户端生成的幂等键
+          example: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+    TaskResponseResult:
+      type: object
+      properties:
+        responseId:
+          type: integer
+          format: int64
+          example: 5
+        taskId:
+          type: integer
+          format: int64
+          example: 1
+        occurrenceId:
+          type: integer
+          format: int64
+          example: 10
+        completionRatio:
+          type: integer
+          example: 80
+        intimacyDelta:
+          type: number
+          format: double
+          example: 4.5
+        intimacyTotal:
+          type: number
+          format: double
+          example: 125
+        stageCode:
+          type: string
+          example: ACQUAINTANCE
+        stageName:
+          type: string
+          example: 熟悉
+        dailyGained:
+          type: number
+          format: double
+          example: 16.5
+        dailyCap:
+          type: integer
+          example: 50
+        taskCountToday:
+          type: integer
+          example: 4
+        maxDailyTasks:
+          type: integer
+          example: 10
+        feedback:
+          type: string
+          example: 做得不错，继续保持。
+        corrected:
+          type: boolean
+          example: false
+        respondedAt:
+          type: string
+          example: "2026-11-20 18:10:00"
+
+    Relationship:
+      type: object
+      properties:
+        intimacyTotal:
+          type: number
+          format: double
+          example: 120.5
+        stageCode:
+          type: string
+          example: ACQUAINTANCE
+        stageName:
+          type: string
+          example: 熟悉
+        stageSince:
+          type: string
+          nullable: true
+          example: "2026-11-01 10:00:00"
+        nextStageCode:
+          type: string
+          nullable: true
+          example: FRIEND
+        nextStageName:
+          type: string
+          nullable: true
+          example: 朋友
+        nextThreshold:
+          type: number
+          format: double
+          nullable: true
+          example: 300
+        progressPercent:
+          type: number
+          format: double
+          example: 40.2
+        todayGained:
+          type: number
+          format: double
+          example: 12
+        dailyCap:
+          type: integer
+          example: 50
+        taskCountToday:
+          type: integer
+          format: int64
+          example: 3
+        maxDailyTasks:
+          type: integer
+          example: 10
+        streakDays:
+          type: integer
+          example: 5
+        userCapStage:
+          type: string
+          nullable: true
+          example: ACQUAINTANCE
+    IntimacyLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        delta:
+          type: number
+          format: double
+          example: 4.5
+        balanceAfter:
+          type: number
+          format: double
+          example: 125
+        reason:
+          type: string
+          example: TASK_RESPONSE
+        reasonLabel:
+          type: string
+          example: 完成任务回应
+        refType:
+          type: string
+          nullable: true
+          example: TASK_OCCURRENCE
+        refId:
+          type: integer
+          format: int64
+          nullable: true
+          example: 10
+        createdAt:
+          type: string
+          example: "2026-11-20 18:10:00"
+    IntimacyLogPage:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntimacyLog'
+        total:
+          type: integer
+          format: int64
+          example: 1
+        page:
+          type: integer
+          format: int64
+          example: 1
+        size:
+          type: integer
+          format: int64
+          example: 20
+
+    PersonaTraits:
+      type: object
+      description: 风格强度，取值 0~1
+      properties:
+        warmth:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.5
+        humor:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.3
+        directness:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.5
+        initiative:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.5
+        verbosity:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.5
+    PersonaOption:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 人格编码，如 persona_default / persona_warm / persona_lively / persona_calm / persona_teasing
+          example: persona_default
+        name:
+          type: string
+          example: 默认
+        description:
+          type: string
+          example: 自然、温和的陪伴
+        sample:
+          type: string
+          example: 我在呢，慢慢说。
+        defaultTraits:
+          $ref: '#/components/schemas/PersonaTraits'
+    PersonaCurrent:
+      type: object
+      properties:
+        code:
+          type: string
+          example: persona_default
+        name:
+          type: string
+          example: 默认
+        description:
+          type: string
+          example: 自然、温和的陪伴
+        sample:
+          type: string
+          example: 我在呢，慢慢说。
+        traits:
+          $ref: '#/components/schemas/PersonaTraits'
+    UpdatePersonaRequest:
+      type: object
+      required: [personaCode]
+      properties:
+        personaCode:
+          type: string
+          maxLength: 64
+          description: 人格编码
+          example: persona_warm
+        traits:
+          $ref: '#/components/schemas/PersonaTraits'
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        type:
+          type: string
+          description: 通知类型，如 TASK_RINGING / PROACTIVE
+          example: TASK_RINGING
+        title:
+          type: string
+          example: 任务提醒
+        body:
+          type: string
+          example: 该提交周报了
+        payload:
+          description: payload JSON 解析后的对象，前端可直接使用
+          nullable: true
+        read:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          example: "2026-11-13 18:00:00"
+    NotificationPage:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        total:
+          type: integer
+          format: int64
+          example: 10
+        page:
+          type: integer
+          format: int64
+          example: 1
+        size:
+          type: integer
+          format: int64
+          example: 20
+        unreadCount:
+          type: integer
+          format: int64
+          example: 3
+    NotificationSettings:
+      type: object
+      properties:
+        dndEnabled:
+          type: boolean
+          description: 是否开启免打扰
+          example: true
+        dndStart:
+          type: string
+          nullable: true
+          description: 免打扰开始时间 HH:mm
+          example: "22:00"
+        dndEnd:
+          type: string
+          nullable: true
+          description: 免打扰结束时间 HH:mm
+          example: "08:00"
+        proactiveEnabled:
+          type: boolean
+          description: 是否允许主动消息
+          example: true
+    UpdateNotificationSettingsRequest:
+      type: object
+      properties:
+        dndEnabled:
+          type: boolean
+        dndStart:
+          type: string
+          maxLength: 5
+          description: HH:mm
+          example: "22:00"
+        dndEnd:
+          type: string
+          maxLength: 5
+          description: HH:mm
+          example: "08:00"
+        proactiveEnabled:
+          type: boolean
+    PushSubscribeRequest:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          maxLength: 4096
+          description: 浏览器 PushSubscription.endpoint
+          example: https://fcm.googleapis.com/fcm/send/xxx
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh:
+              type: string
+              maxLength: 512
+              example: BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM
+            auth:
+              type: string
+              maxLength: 512
+              example: tBHItJI5svbpez7KI4CCXg
+        userAgent:
+          type: string
+          maxLength: 255
+          example: Mozilla/5.0 ...
+    PushUnsubscribeRequest:
+      type: object
+      required: [endpoint]
+      properties:
+        endpoint:
+          type: string
+          maxLength: 4096
+          description: 要取消的推送 endpoint
+          example: https://fcm.googleapis.com/fcm/send/xxx
+    PushPublicKey:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: 服务端是否启用 Web Push
+          example: true
+        publicKey:
+          type: string
+          description: VAPID 公钥
+          example: BPPLpi2hsU5NfP1h95v3kV2UA8-MB8dc9ep4XAOyPJ0qLBQfRBgTGqkn7wnvHvCIq7zXCYy6XV5GYM6mykH1Fuk
+
+    ResultLogin:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/LoginData'
+    ResultUserDetail:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/UserDetail'
+    ResultUserPage:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/UserPage'
+    ResultOnlineUserList:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnlineUser'
+    ResultCaptcha:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/Captcha'
+    ResultLong:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: integer
+          format: int64
+          example: 3
+    ResultInteger:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: integer
+          example: 1
+    ResultVoid:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          nullable: true
+          example: null
+    ResultChatSession:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/ChatSession'
+    ResultSessionPage:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/SessionPage'
+    ResultMessagePage:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/MessagePage'
+    ResultTask:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/Task'
+    ResultTaskPage:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/TaskPage'
+    ResultOccurrenceList:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Occurrence'
+    ResultTaskResponseResult:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/TaskResponseResult'
+    ResultRelationship:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/Relationship'
+    ResultIntimacyLogPage:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/IntimacyLogPage'
+    ResultPersonaOptionList:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonaOption'
+    ResultPersonaCurrent:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/PersonaCurrent'
+    ResultNotificationPage:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/NotificationPage'
+    ResultNotificationSettings:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/NotificationSettings'
+    ResultPushPublicKey:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/PushPublicKey'
+    ErrorResponse:
+      type: object
+      description: |
+        错误响应。HTTP 401/403 时 code 分别为 "401"/"403"；
+        参数校验失败 HTTP 200、code="-2"；业务错误 HTTP 200、code 为具体业务码。
+        常见业务码：UNAUTHORIZED、FORBIDDEN、PARAM_ERROR、NOT_FOUND、
+        DUPLICATE_MESSAGE、SESSION_ARCHIVED、AGENT_BUSY、ALREADY_RESPONDED、
+        CORRECTION_EXPIRED。
+      properties:
+        code:
+          type: string
+          example: PARAM_ERROR
+        msg:
+          type: string
+          example: 参数错误
+        data:
+          nullable: true
+          example: null

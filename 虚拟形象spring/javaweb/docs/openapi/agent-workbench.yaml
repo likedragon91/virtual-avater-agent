@@ -1,0 +1,566 @@
+openapi: 3.0.3
+info:
+  title: 虚拟形象 Agent 工作台会话 API
+  version: 1.1.0
+  description: |
+    本文件是 Agent 会话能力的接口契约，**以 Apifox 为准**。
+    在 Apifox 修改/评审后导出 OpenAPI 覆盖本文件，后端再按契约实现。
+
+    约定：
+    - 所有接口都需要 `Authorization: Bearer <JWT>`。
+    - 未登录/ token 失效返回 HTTP 401；越权返回 HTTP 403。
+    - 业务错误统一返回 HTTP 200，响应体中的 `code` 非 `"200"`。
+    - 流式接口在流建立前的错误（越权、重复发送等）返回 `application/json`。
+servers:
+  - url: http://127.0.0.1:1107/api
+    description: 本地开发（Apifox 前置 URL 同为 /api；接口路径不要再带 /api 前缀）
+tags:
+  - name: Agent Session
+    description: Agent 工作台会话、消息与流式回答
+security:
+  - bearerAuth: []
+paths:
+  /agent/sessions:
+    post:
+      tags: [Agent Session]
+      summary: 新建会话
+      operationId: createAgentSession
+      description: 创建一个新的 Agent 会话。标题和角色编码都可省略。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+            example:
+              title: 新的对话
+              personaCode: default
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionResponse'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  id: 1
+                  title: 新的对话
+                  personaCode: default
+                  status: 1
+                  messageCount: 0
+                  lastActiveAt: "2026-11-12 20:00:00"
+                  createdAt: "2026-11-12 20:00:00"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags: [Agent Session]
+      summary: 会话列表
+      operationId: listAgentSessions
+      description: 按最后活跃时间倒序返回当前用户的正常会话。
+      parameters:
+        - name: page
+          in: query
+          description: 页码，从 1 开始
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 1
+            minimum: 1
+        - name: size
+          in: query
+          description: 每页条数，最大 50
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  records:
+                    - id: 1
+                      title: 新的对话
+                      personaCode: default
+                      status: 1
+                      messageCount: 4
+                      lastActiveAt: "2026-11-12 20:05:00"
+                      createdAt: "2026-11-12 20:00:00"
+                  total: 1
+                  page: 1
+                  size: 20
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /agent/sessions/{id}:
+    get:
+      tags: [Agent Session]
+      summary: 会话详情
+      operationId: getAgentSession
+      description: 只允许访问当前用户自己的会话；不存在或越权时返回业务错误。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [Agent Session]
+      summary: 重命名 / 归档会话
+      operationId: updateAgentSession
+      description: 只更新传入的字段。status 传 0 表示归档，归档会话不再出现在列表中，也不能继续发消息。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionRequest'
+            example:
+              title: 周报与面试
+              status: 1
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Agent Session]
+      summary: 删除会话
+      operationId: deleteAgentSession
+      description: 物理删除会话，消息与工具调用日志由数据库外键级联删除。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoidResponse'
+              example:
+                code: "200"
+                msg: 操作成功
+                data: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /agent/sessions/{id}/messages:
+    get:
+      tags: [Agent Session]
+      summary: 历史消息
+      operationId: listAgentMessages
+      description: |
+        按时间升序返回。cursor 为空时取最新一页；继续向前翻页时，把上一页的 nextCursor 传回。
+        只返回 user / assistant 消息；生成中（status=0）的消息不返回。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: cursor
+          in: query
+          description: 上一页返回的 nextCursor；不传表示最新一页
+          required: false
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+        - name: size
+          in: query
+          description: 每页条数，最大 50
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagePageResponse'
+              example:
+                code: "200"
+                msg: 操作成功
+                data:
+                  records:
+                    - id: 10
+                      senderRole: user
+                      content: 我这周还有什么任务？
+                      contentType: text
+                      status: 1
+                      tokens: null
+                      model: null
+                      createdAt: "2026-11-12 20:03:00"
+                    - id: 11
+                      senderRole: assistant
+                      content: 你这周还有 3 个任务……
+                      contentType: text
+                      status: 1
+                      tokens: 256
+                      model: deepseek-chat
+                      createdAt: "2026-11-12 20:03:05"
+                  nextCursor: 10
+                  hasMore: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /agent/sessions/{id}/messages/stream:
+    post:
+      tags: [Agent Session]
+      summary: 发送消息并流式回答
+      operationId: streamAgentMessage
+      description: |
+        发送一条用户消息，通过 SSE 返回 Agent 的流式回答。
+
+        **必须使用 fetch + ReadableStream 接收**，浏览器原生 EventSource 不能携带 Authorization 头。
+
+        事件顺序：
+        - `meta`：`{runId, sessionId, assistantMessageId}`
+        - `delta`：`{text}`，可多次
+        - `tool_start`：`{callId, tool}`
+        - `tool_end`：`{callId, ok, summary}`
+        - `done`：`{runId, messageId, finishReason, usage.completionTokens}`
+        - `error`：`{code, msg}`
+
+        每个 `data` 都是 JSON 字符串，事件之间以空行分隔。
+        流建立前的业务错误（越权、重复发送、已归档等）返回 `application/json`。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+            example:
+              content: 我这周还有什么任务？
+              clientMessageId: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+      responses:
+        '200':
+          description: SSE 流；若在流建立前失败，则返回 application/json
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stream:
+                  summary: 一次带工具调用的完整流
+                  value: |
+                    event: meta
+                    data: {"runId":12,"sessionId":1,"assistantMessageId":12}
+
+                    event: delta
+                    data: {"text":"我先看看"}
+
+                    event: tool_start
+                    data: {"callId":"call_1","tool":"query_tasks"}
+
+                    event: tool_end
+                    data: {"callId":"call_1","ok":true,"summary":"找到 3 个任务"}
+
+                    event: delta
+                    data: {"text":"你这周还有 3 个任务。"}
+
+                    event: done
+                    data: {"runId":12,"messageId":12,"finishReason":"stop","usage":{"completionTokens":256}}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: DUPLICATE_MESSAGE
+                msg: 请勿重复发送同一条消息
+                data: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /agent/runs/{runId}/cancel:
+    post:
+      tags: [Agent Session]
+      summary: 停止生成
+      operationId: cancelAgentRun
+      description: runId 即 assistant 消息 id（SSE meta 事件中的 assistantMessageId）。
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          description: assistant 消息 id
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 已受理；若运行已结束则不做事
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoidResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SessionId:
+      name: id
+      in: path
+      required: true
+      description: 会话 id
+      schema:
+        type: integer
+        format: int64
+  responses:
+    Unauthorized:
+      description: 未登录或 token 失效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "401"
+            msg: 未登录或登录已过期
+            data: null
+    Forbidden:
+      description: 越权访问
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "403"
+            msg: 没有访问该会话的权限
+            data: null
+  schemas:
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 120
+          description: 会话标题，省略时默认「新的对话」
+          example: 新的对话
+        personaCode:
+          type: string
+          maxLength: 32
+          description: 角色/人设编码，省略时默认 default
+          example: default
+    UpdateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 120
+          example: 周报与面试
+        status:
+          type: integer
+          description: 1-正常，0-归档
+          enum: [0, 1]
+          example: 1
+    SendMessageRequest:
+      type: object
+      required: [content, clientMessageId]
+      properties:
+        content:
+          type: string
+          maxLength: 8000
+          description: 消息正文
+          example: 我这周还有什么任务？
+        clientMessageId:
+          type: string
+          maxLength: 64
+          description: 客户端生成的幂等键，建议 UUID；重试时不要复用
+          example: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+    ChatSession:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        title:
+          type: string
+          example: 新的对话
+        personaCode:
+          type: string
+          example: default
+        status:
+          type: integer
+          description: 1-正常，0-归档
+          enum: [0, 1]
+          example: 1
+        messageCount:
+          type: integer
+          example: 4
+        lastActiveAt:
+          type: string
+          description: 格式 yyyy-MM-dd HH:mm:ss
+          example: "2026-11-12 20:05:00"
+        createdAt:
+          type: string
+          description: 格式 yyyy-MM-dd HH:mm:ss
+          example: "2026-11-12 20:00:00"
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 11
+        senderRole:
+          type: string
+          enum: [user, assistant]
+          example: assistant
+        content:
+          type: string
+          example: 你这周还有 3 个任务……
+        contentType:
+          type: string
+          example: text
+        status:
+          type: integer
+          description: 1-完成，2-失败，3-已取消；历史消息不返回生成中的 0
+          enum: [1, 2, 3]
+          example: 1
+        tokens:
+          type: integer
+          nullable: true
+          example: 256
+        model:
+          type: string
+          nullable: true
+          example: deepseek-chat
+        createdAt:
+          type: string
+          example: "2026-11-12 20:03:05"
+    SessionList:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatSession'
+        total:
+          type: integer
+          format: int64
+          example: 1
+        page:
+          type: integer
+          format: int64
+          example: 1
+        size:
+          type: integer
+          format: int64
+          example: 20
+    MessagePage:
+      type: object
+      properties:
+        records:
+          type: array
+          description: 按时间升序
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        nextCursor:
+          type: integer
+          format: int64
+          nullable: true
+          description: 继续向前翻页时传回；为空表示没有更早的消息
+          example: 10
+        hasMore:
+          type: boolean
+          example: true
+    ChatSessionResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/ChatSession'
+    SessionListResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/SessionList'
+    MessagePageResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/MessagePage'
+    VoidResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "200"
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          nullable: true
+          example: null
+    ErrorResponse:
+      type: object
+      description: |
+        业务错误响应。HTTP 状态通常为 200，`code` 非 `"200"`。
+        常见 code：PARAM_ERROR、NOT_FOUND、FORBIDDEN、DUPLICATE_MESSAGE、
+        SESSION_ARCHIVED、AGENT_BUSY、UNAUTHORIZED。
+      properties:
+        code:
+          type: string
+          example: DUPLICATE_MESSAGE
+        msg:
+          type: string
+          example: 请勿重复发送同一条消息
+        data:
+          nullable: true
+          example: null

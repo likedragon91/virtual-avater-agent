@@ -1,4 +1,4 @@
-package com.example.javaweb.DTO.response;
+package com.example.javaweb.dto.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

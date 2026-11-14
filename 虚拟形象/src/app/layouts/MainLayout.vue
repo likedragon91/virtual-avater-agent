@@ -1,13 +1,17 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { UserFilled, SwitchButton, ChatDotRound, ShoppingBag, Calendar, Notebook, Setting, User, Monitor, Fold, Expand } from '@element-plus/icons-vue'
+import { ElNotification } from 'element-plus'
+import { UserFilled, SwitchButton, ChatDotRound, ShoppingBag, Calendar, Notebook, Setting, User, Monitor, Fold, Expand, Star, Bell } from '@element-plus/icons-vue'
 import { getUserMessage, BASE_URL } from '@/shared/api/user'
 import { useAuthStore } from '@/shared/stores/auth'
+import { useNotificationStore } from '@/shared/stores/notification'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const notificationStore = useNotificationStore()
+const notificationPopoverRef = ref()
 
 const activeMenu = computed(() => route.path)
 
@@ -43,6 +47,34 @@ async function loadCurrentUser() {
   }
 }
 
+const pad = (value) => String(value).padStart(2, '0')
+
+function formatNotificationTime(text) {
+  if (!text) return ''
+  const date = new Date(String(text).replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const diff = (now.getTime() - date.getTime()) / 1000
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (date.toDateString() === now.toDateString()) {
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  }
+  return `${date.getMonth() + 1}-${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+async function handleNotificationClick(item) {
+  await notificationStore.markRead(item.id)
+  notificationPopoverRef.value?.hide()
+  if (item.type === 'TASK_REMINDER') {
+    router.push('/task')
+  }
+}
+
+function handleMarkAllRead() {
+  notificationStore.markAllRead()
+}
+
 function handleCommand(command) {
   if (command === 'settings') router.push('/settings')
   if (command === 'logout') logout()
@@ -54,7 +86,26 @@ async function logout() {
   router.replace('/login')
 }
 
-onMounted(loadCurrentUser)
+onMounted(async () => {
+  await loadCurrentUser()
+  await notificationStore.loadUnread()
+  notificationStore.startStream((notification) => {
+    ElNotification({
+      title: notification.title,
+      message: notification.body,
+      type: 'warning',
+      duration: 8000,
+      onClick: () => {
+        notificationStore.markRead(notification.id)
+        router.push('/task')
+      }
+    })
+  })
+})
+
+onBeforeUnmount(() => {
+  notificationStore.stopStream()
+})
 </script>
 
 <template>
@@ -79,6 +130,67 @@ onMounted(loadCurrentUser)
           </div>
         </div>
         <div class="header-right">
+          <el-popover
+            ref="notificationPopoverRef"
+            placement="bottom-end"
+            :width="360"
+            trigger="click"
+            popper-class="notification-popper"
+            @show="notificationStore.loadList()"
+          >
+            <template #reference>
+              <el-badge
+                :value="notificationStore.unreadCount"
+                :max="99"
+                :hidden="!notificationStore.unreadCount"
+              >
+                <el-button
+                  text
+                  circle
+                  :icon="Bell"
+                  class="notification-bell"
+                  aria-label="通知"
+                />
+              </el-badge>
+            </template>
+
+            <div class="notification-panel">
+              <div class="notification-head">
+                <span class="notification-head-title">通知</span>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :disabled="!notificationStore.unreadCount"
+                  @click="handleMarkAllRead"
+                >
+                  全部已读
+                </el-button>
+              </div>
+              <div v-if="notificationStore.loading" class="notification-empty">
+                加载中…
+              </div>
+              <div v-else-if="!notificationStore.notifications.length" class="notification-empty">
+                暂无通知
+              </div>
+              <div v-else class="notification-list">
+                <div
+                  v-for="item in notificationStore.notifications"
+                  :key="item.id"
+                  class="notification-item"
+                  :class="{ unread: !item.read }"
+                  @click="handleNotificationClick(item)"
+                >
+                  <div class="notification-item-title">{{ item.title }}</div>
+                  <div class="notification-item-body">{{ item.body }}</div>
+                  <div class="notification-item-time">
+                    {{ formatNotificationTime(item.createdAt) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </el-popover>
+
           <span class="header-username">{{ authStore.displayName }}</span>
           <el-dropdown trigger="click" @command="handleCommand">
             <el-avatar
@@ -123,6 +235,10 @@ onMounted(loadCurrentUser)
             <el-menu-item index="/task">
               <el-icon><Calendar /></el-icon>
               <span>任务</span>
+            </el-menu-item>
+            <el-menu-item index="/relationship">
+              <el-icon><Star /></el-icon>
+              <span>关系</span>
             </el-menu-item>
             <el-menu-item index="/memory">
               <el-icon><Notebook /></el-icon>
@@ -213,6 +329,10 @@ onMounted(loadCurrentUser)
   cursor: pointer;
 }
 
+.notification-bell {
+  padding: 6px;
+}
+
 .layout-body {
   height: calc(100% - 60px);
 }
@@ -241,5 +361,73 @@ onMounted(loadCurrentUser)
 .layout-main {
   background: #f5f7fa;
   overflow-y: auto;
+}
+</style>
+
+<style>
+.notification-popper {
+  padding: 0 !important;
+}
+
+.notification-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+}
+
+.notification-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.notification-head-title {
+  font-weight: 600;
+}
+
+.notification-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.notification-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.notification-item.unread {
+  background: var(--el-color-primary-light-9);
+}
+
+.notification-item-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notification-item-body {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+}
+
+.notification-item-time {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
 }
 </style>
