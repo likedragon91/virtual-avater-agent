@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/shared/stores/auth'
+import { updateProfile } from '@/shared/api/user'
 import { getCurrentPersona, getPersonaOptions, updatePersona } from '@/shared/api/persona'
 import {
   getNotificationSettings,
@@ -248,6 +249,65 @@ async function handleTestPush() {
   }
 }
 
+const profileDialogVisible = ref(false)
+const profileSaving = ref(false)
+const profileFormRef = ref(null)
+const profileForm = reactive({
+  nickname: '',
+  avatar: '',
+  phone: '',
+  gender: 0,
+  birthday: ''
+})
+
+const profileRules = {
+  nickname: [{ max: 50, message: '昵称不能超过 50 个字符', trigger: 'blur' }],
+  avatar: [{ max: 255, message: '头像地址不能超过 255 个字符', trigger: 'blur' }],
+  phone: [{ pattern: /^$|^1[3456789]\d{9}$/, message: '手机号格式错误', trigger: 'blur' }]
+}
+
+function openProfileDialog() {
+  const info = authStore.userInfo || {}
+  profileForm.nickname = info.nickname || ''
+  profileForm.avatar = info.avatar || ''
+  profileForm.phone = info.phone || ''
+  profileForm.gender = Number(info.gender ?? 0)
+  profileForm.birthday = info.birthday || ''
+  profileDialogVisible.value = true
+}
+
+async function saveProfile() {
+  if (!profileFormRef.value) return
+  try {
+    await profileFormRef.value.validate()
+  } catch {
+    return
+  }
+
+  profileSaving.value = true
+  try {
+    const res = await updateProfile({
+      nickname: profileForm.nickname.trim(),
+      avatar: profileForm.avatar.trim(),
+      phone: profileForm.phone.trim(),
+      gender: profileForm.gender,
+      birthday: profileForm.birthday || ''
+    })
+    if (res && res.code === '200') {
+      authStore.updateUserInfo(res.data || {})
+      profileDialogVisible.value = false
+      ElMessage.success('个人资料已更新')
+    } else {
+      ElMessage.error((res && res.msg) || '保存失败')
+    }
+  } catch (e) {
+    if (e && e.isAuthError) return
+    ElMessage.error('保存失败，请稍后重试')
+  } finally {
+    profileSaving.value = false
+  }
+}
+
 onMounted(async () => {
   await Promise.all([loadPersona(), loadNotificationSettings()])
 })
@@ -283,7 +343,12 @@ async function handleLogout() {
 
     <el-card shadow="never">
       <template #header>
-        <span class="card-title">账号信息</span>
+        <div class="card-header account-header">
+          <span class="card-title">账号信息</span>
+          <el-button size="small" type="primary" plain @click="openProfileDialog">
+            编辑资料
+          </el-button>
+        </div>
       </template>
 
       <el-descriptions :column="2" border>
@@ -447,6 +512,62 @@ async function handleLogout() {
       <p class="logout-tip">退出后会同时通知后端撤销当前 token，并清理本地登录态。</p>
       <el-button type="danger" plain @click="handleLogout">退出登录</el-button>
     </el-card>
+
+    <el-dialog
+      v-model="profileDialogVisible"
+      title="编辑个人资料"
+      width="480px"
+      destroy-on-close
+    >
+      <el-form
+        ref="profileFormRef"
+        :model="profileForm"
+        :rules="profileRules"
+        label-width="80px"
+      >
+        <el-form-item label="昵称" prop="nickname">
+          <el-input v-model="profileForm.nickname" maxlength="50" show-word-limit />
+        </el-form-item>
+        <el-form-item label="头像" prop="avatar">
+          <el-input
+            v-model="profileForm.avatar"
+            placeholder="图片 URL 或 /files/... 路径"
+            maxlength="255"
+          />
+        </el-form-item>
+        <el-form-item label="手机号" prop="phone">
+          <el-input v-model="profileForm.phone" maxlength="11" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="性别" prop="gender">
+          <el-radio-group v-model="profileForm.gender">
+            <el-radio :value="0">未知</el-radio>
+            <el-radio :value="1">男</el-radio>
+            <el-radio :value="2">女</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="生日" prop="birthday">
+          <el-date-picker
+            v-model="profileForm.birthday"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择生日"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="账号、邮箱、用户类型和状态不可自行修改"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="profileDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="profileSaving" @click="saveProfile">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -472,6 +593,11 @@ async function handleLogout() {
   display: flex;
   align-items: baseline;
   gap: 10px;
+}
+
+.account-header {
+  align-items: center;
+  justify-content: space-between;
 }
 
 .card-sub {

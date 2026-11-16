@@ -24,7 +24,7 @@ export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
     throw new Error('当前浏览器不支持 Service Worker')
   }
-  const registration = await navigator.serviceWorker.register('/sw.js')
+  const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`)
   await navigator.serviceWorker.ready
   return registration
 }

@@ -60,6 +60,10 @@ function goRegister() {
   router.push('/register')
 }
 
+function goForgot() {
+  router.push('/forgot-password')
+}
+
 async function handleLogin() {
   if (!formRef.value) return
 
@@ -200,6 +204,8 @@ async function handleLogin() {
             <div class="register-link">
               还没有账号？
               <el-link type="primary" @click="goRegister">立即注册</el-link>
+              <span class="link-sep">|</span>
+              <el-link type="info" @click="goForgot">忘记密码</el-link>
             </div>
           </div>
         </div>
@@ -368,5 +374,10 @@ async function handleLogin() {
   text-align: center;
   font-size: 14px;
   color: #909399;
+}
+
+.link-sep {
+  margin: 0 8px;
+  color: #dcdfe6;
 }
 </style>

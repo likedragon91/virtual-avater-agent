@@ -12,7 +12,18 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    open: true
+    open: true,
+    proxy: {
+      // 后端控制器路径本身包含 /api，这里保持原样转发，不做 rewrite
+      '/api': {
+        target: 'http://127.0.0.1:1107',
+        changeOrigin: true
+      },
+      '/files': {
+        target: 'http://127.0.0.1:1107',
+        changeOrigin: true
+      }
+    }
   },
   build: {
     rollupOptions: {

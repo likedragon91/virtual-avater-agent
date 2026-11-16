@@ -1,8 +1,8 @@
-import { BASE_URL } from './user'
+import { API_BASE_URL } from './config'
 import { request, handleUnauthorized, AuthError } from './request'
 import { getToken, isTokenExpired } from '@/shared/utils/auth'
 
-const AGENT_BASE = `${BASE_URL}/api/agent`
+const AGENT_BASE = `${API_BASE_URL}/agent`
 
 /**
  * Agent 接口业务错误。

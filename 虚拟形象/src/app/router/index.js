@@ -16,6 +16,12 @@ const routes = [
     meta: { title: '注册', public: true }
   },
   {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/features/auth/views/ForgotPasswordView.vue'),
+    meta: { title: '找回密码', public: true }
+  },
+  {
     path: '/',
     component: () => import('@/app/layouts/MainLayout.vue'),
     redirect: '/chat',

@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import { getUserList } from '@/shared/api/user'
+import { getUserList, updateUserStatus } from '@/shared/api/user'
 import { useAuthStore } from '@/shared/stores/auth'
 
 const authStore = useAuthStore()
@@ -14,6 +14,7 @@ const keyword = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+const statusUpdatingId = ref(null)
 
 const isAdmin = computed(() => authStore.isAdmin)
 
@@ -26,7 +27,8 @@ const genderText = (row) => {
   return { 0: '未知', 1: '男', 2: '女' }[row.gender] || '未知'
 }
 
-const statusText = (row) => row.statusDisplayName || (row.status === 1 ? '正常' : '禁用')
+const statusText = (row) =>
+  row.statusDisplayName || ({ 0: '禁用', 1: '正常', 2: '锁定' }[Number(row.status)] || '正常')
 
 const statusTagType = (status) => {
   switch (Number(status)) {
@@ -75,6 +77,46 @@ async function loadList() {
     ElMessage.error('获取用户列表失败，请检查网络或接口地址')
   } finally {
     loading.value = false
+  }
+}
+
+async function toggleStatus(row) {
+  const nextStatus = Number(row.status) === 1 ? 0 : 1
+  const action = nextStatus === 0 ? '禁用' : '启用'
+
+  if (nextStatus === 0 && Number(row.id) === Number(authStore.userInfo?.id)) {
+    ElMessage.warning('不能禁用当前登录账号')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要${action}用户“${row.username}”吗？`,
+      '修改用户状态',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+
+  statusUpdatingId.value = row.id
+  try {
+    const res = await updateUserStatus(row.id, nextStatus)
+    if (res && res.code === '200') {
+      ElMessage.success(`已${action}用户“${row.username}”`)
+      await loadList()
+    } else {
+      ElMessage.error((res && res.msg) || `${action}失败`)
+    }
+  } catch (e) {
+    if (e && e.isAuthError) return
+    ElMessage.error(`${action}失败，请稍后重试`)
+  } finally {
+    statusUpdatingId.value = null
   }
 }
 
@@ -150,6 +192,18 @@ onMounted(loadList)
       <el-table-column prop="email" label="邮箱" min-width="200" />
       <el-table-column prop="phone" label="手机号" width="140" />
       <el-table-column prop="createdAt" label="创建时间" width="180" />
+      <el-table-column label="操作" width="100" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            link
+            :type="Number(row.status) === 1 ? 'danger' : 'success'"
+            :loading="statusUpdatingId === row.id"
+            @click="toggleStatus(row)"
+          >
+            {{ Number(row.status) === 1 ? '禁用' : '启用' }}
+          </el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
     <div class="table-pagination">

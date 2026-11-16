@@ -1,7 +1,5 @@
 import { request } from './request'
-
-// 接口基础地址：Spring Boot 后端（后端已配置跨域，直接请求）
-export const BASE_URL = 'http://localhost:1107'
+import { API_BASE_URL } from './config'
 
 /**
  * 获取图形验证码
@@ -9,7 +7,7 @@ export const BASE_URL = 'http://localhost:1107'
  * @returns {Promise<{ code: string, msg: string, data: { captchaId: string, captchaImage: string } }>}
  */
 export function getCaptcha() {
-  return request(`${BASE_URL}/api/user/captcha`, {
+  return request(`${API_BASE_URL}/user/captcha`, {
     method: 'GET',
     auth: false,
     skipAuthHandler: true
@@ -23,7 +21,7 @@ export function getCaptcha() {
  * @returns {Promise<{ code: string, msg: string, data: { token: string, roleType: string, userInfo: object } }>}
  */
 export function login(data) {
-  return request(`${BASE_URL}/api/user/login`, {
+  return request(`${API_BASE_URL}/user/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -38,7 +36,7 @@ export function login(data) {
  * @returns {Promise<{ code: string, msg: string, data: object }>}
  */
 export function register(data) {
-  return request(`${BASE_URL}/api/user/register`, {
+  return request(`${API_BASE_URL}/user/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -55,7 +53,7 @@ export function register(data) {
  */
 export function getUserMessage(username) {
   const query = username ? `?username=${encodeURIComponent(username)}` : ''
-  return request(`${BASE_URL}/api/user/message${query}`, {
+  return request(`${API_BASE_URL}/user/message${query}`, {
     method: 'GET'
   })
 }
@@ -69,7 +67,7 @@ export function getUserList(params = {}) {
   const { page = 1, size = 10, keyword = '' } = params
   const query = new URLSearchParams({ page: String(page), size: String(size) })
   if (keyword) query.set('keyword', keyword)
-  return request(`${BASE_URL}/api/user/list?${query.toString()}`, {
+  return request(`${API_BASE_URL}/user/list?${query.toString()}`, {
     method: 'GET'
   })
 }
@@ -80,8 +78,63 @@ export function getUserList(params = {}) {
  * @returns {Promise<{ code: string, msg: string, data: object[] }>}
  */
 export function getOnlineUsers() {
-  return request(`${BASE_URL}/api/user/online`, {
+  return request(`${API_BASE_URL}/user/online`, {
     method: 'GET'
+  })
+}
+
+/**
+ * 当前用户编辑自己的资料
+ * 只允许昵称、头像、手机、性别、生日；权限字段由后端白名单限制。
+ * @param {{ nickname?: string, avatar?: string, phone?: string, gender?: number, birthday?: string }} data
+ */
+export function updateProfile(data) {
+  return request(`${API_BASE_URL}/user/profile`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  })
+}
+
+/**
+ * 管理员修改用户状态
+ * @param {number} id
+ * @param {number} status 0-禁用，1-正常
+ */
+export function updateUserStatus(id, status) {
+  return request(`${API_BASE_URL}/user/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  })
+}
+
+/**
+ * 请求发送找回密码验证码
+ * @param {string} email
+ */
+export function requestPasswordReset(email) {
+  return request(`${API_BASE_URL}/user/password/forgot`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+    auth: false,
+    skipAuthHandler: true
+  })
+}
+
+/**
+ * 使用邮箱验证码重置密码
+ * newPassword / confirmPassword 均为前端 SM3 后的 64 位摘要
+ * @param {{ email: string, code: string, newPassword: string, confirmPassword: string }} data
+ */
+export function resetPassword(data) {
+  return request(`${API_BASE_URL}/user/password/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+    auth: false,
+    skipAuthHandler: true
   })
 }
 
@@ -92,7 +145,7 @@ export function getOnlineUsers() {
  * @returns {Promise<{ code: string, msg: string }>}
  */
 export function logout() {
-  return request(`${BASE_URL}/api/user/logout`, {
+  return request(`${API_BASE_URL}/user/logout`, {
     method: 'POST',
     // token 已失效时不再触发全局跳转，由调用方统一清理本地状态
     skipAuthHandler: true

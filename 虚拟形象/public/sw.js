@@ -8,6 +8,17 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
+// 只允许跳转到同源站内路径，避免推送内容把用户带到外部站点
+const safeTarget = (value) => {
+  try {
+    const url = new URL(value || '/task', self.location.origin)
+    if (url.origin !== self.location.origin) return '/task'
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return '/task'
+  }
+}
+
 self.addEventListener('push', (event) => {
   let payload = {}
   try {
@@ -21,7 +32,7 @@ self.addEventListener('push', (event) => {
     body: payload.body || '你有一条新提醒',
     tag: payload.tag || 'virtual-agent',
     data: {
-      url: payload.url || '/task',
+      url: safeTarget(payload.url),
       ...(payload.data || {})
     }
   }
@@ -32,7 +43,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const data = event.notification.data || {}
-  const target = data.url || '/task'
+  const target = safeTarget(data.url)
 
   event.waitUntil(
     (async () => {

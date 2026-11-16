@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import { UserFilled, SwitchButton, ChatDotRound, ShoppingBag, Calendar, Notebook, Setting, User, Monitor, Fold, Expand, Star, Bell } from '@element-plus/icons-vue'
-import { getUserMessage, BASE_URL } from '@/shared/api/user'
+import { getUserMessage } from '@/shared/api/user'
+import { ASSET_BASE_URL } from '@/shared/api/config'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useNotificationStore } from '@/shared/stores/notification'
 
@@ -31,7 +32,7 @@ function toggleSidebar() {
 const avatarUrl = computed(() => {
   const avatar = authStore.userInfo.avatar
   if (!avatar) return ''
-  return /^https?:\/\//.test(avatar) ? avatar : `${BASE_URL}${avatar}`
+  return /^https?:\/\//.test(avatar) ? avatar : `${ASSET_BASE_URL}${avatar}`
 })
 
 // 获取当前登录用户信息，刷新本地缓存

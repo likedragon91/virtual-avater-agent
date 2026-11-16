@@ -1,7 +1,7 @@
-import { BASE_URL } from './user'
+import { API_BASE_URL } from './config'
 import { request } from './request'
 
-const API_BASE = `${BASE_URL}/api/relationship`
+const API_BASE = `${API_BASE_URL}/relationship`
 
 export class RelationshipApiError extends Error {
   constructor(code, message) {

@@ -1,8 +1,8 @@
-import { BASE_URL } from './user'
+import { API_BASE_URL } from './config'
 import { request, handleUnauthorized, AuthError } from './request'
 import { getToken, isTokenExpired } from '@/shared/utils/auth'
 
-const API_BASE = `${BASE_URL}/api/notifications`
+const API_BASE = `${API_BASE_URL}/notifications`
 
 export class NotificationApiError extends Error {
   constructor(code, message) {
