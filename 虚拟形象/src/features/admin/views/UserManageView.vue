@@ -147,6 +147,7 @@ onMounted(loadList)
         <div class="card-actions">
           <el-input
             v-model="keyword"
+            class="search-input"
             placeholder="请输入账号或昵称查询"
             clearable
             style="width: 220px"
@@ -159,13 +160,14 @@ onMounted(loadList)
       </div>
     </template>
 
-    <el-table
-      v-loading="loading"
-      :data="tableData"
-      :empty-text="emptyText"
-      style="width: 100%"
-      height="400"
-    >
+    <div class="table-scroll">
+      <el-table
+        v-loading="loading"
+        :data="tableData"
+        :empty-text="emptyText"
+        style="width: 100%"
+        height="400"
+      >
       <el-table-column prop="username" label="账号" min-width="150" />
       <el-table-column label="昵称" min-width="150">
         <template #default="{ row }">
@@ -204,7 +206,8 @@ onMounted(loadList)
           </el-button>
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
+    </div>
 
     <div class="table-pagination">
       <el-pagination
@@ -241,5 +244,26 @@ onMounted(loadList)
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .card-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .card-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .search-input {
+    width: 100% !important;
+  }
+
+  .table-pagination {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
 }
 </style>

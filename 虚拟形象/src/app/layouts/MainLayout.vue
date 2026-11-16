@@ -2,9 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
-import { UserFilled, SwitchButton, ChatDotRound, ShoppingBag, Calendar, Notebook, Setting, User, Monitor, Fold, Expand, Star, Bell } from '@element-plus/icons-vue'
+import { UserFilled, SwitchButton, ChatDotRound, Calendar, Setting, User, Monitor, Fold, Expand, Star, Bell, Menu } from '@element-plus/icons-vue'
 import { getUserMessage } from '@/shared/api/user'
 import { ASSET_BASE_URL } from '@/shared/api/config'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useNotificationStore } from '@/shared/stores/notification'
 
@@ -20,12 +21,33 @@ const activeMenu = computed(() => route.path)
 const SIDEBAR_KEY = 'ui:sidebarCollapsed'
 const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_KEY) === '1')
 
+// 窄屏下侧栏改为抽屉，展开状态不持久化
+const { matches: isMobile } = useMediaQuery('(max-width: 900px)')
+const mobileSidebarOpen = ref(false)
+
 watch(sidebarCollapsed, (value) => {
   localStorage.setItem(SIDEBAR_KEY, value ? '1' : '0')
 })
 
+// 切换路由或回到桌面尺寸时收起抽屉
+watch(() => route.path, () => {
+  mobileSidebarOpen.value = false
+})
+
+watch(isMobile, (mobile) => {
+  if (!mobile) mobileSidebarOpen.value = false
+})
+
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
+function toggleNav() {
+  if (isMobile.value) {
+    mobileSidebarOpen.value = !mobileSidebarOpen.value
+    return
+  }
+  toggleSidebar()
 }
 
 // 后端返回的 avatar 可能是相对路径（如 /files/...），拼接后端地址
@@ -115,16 +137,27 @@ onBeforeUnmount(() => {
       <el-header class="layout-header">
         <div class="header-left">
           <el-tooltip
+            v-if="!isMobile"
             :content="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
             placement="bottom"
           >
-            <el-button text class="sidebar-toggle" @click="toggleSidebar">
+            <el-button text class="sidebar-toggle touch-target" @click="toggleNav">
               <el-icon :size="18">
                 <Expand v-if="sidebarCollapsed" />
                 <Fold v-else />
               </el-icon>
             </el-button>
           </el-tooltip>
+          <el-button
+            v-else
+            text
+            class="sidebar-toggle touch-target"
+            aria-label="打开导航"
+            :aria-expanded="mobileSidebarOpen"
+            @click="toggleNav"
+          >
+            <el-icon :size="20"><Menu /></el-icon>
+          </el-button>
           <div class="header-brand">
             <span class="brand-dot" />
             虚拟形象
@@ -134,7 +167,7 @@ onBeforeUnmount(() => {
           <el-popover
             ref="notificationPopoverRef"
             placement="bottom-end"
-            :width="360"
+            :width="isMobile ? 300 : 360"
             trigger="click"
             popper-class="notification-popper"
             @show="notificationStore.loadList()"
@@ -192,7 +225,7 @@ onBeforeUnmount(() => {
             </div>
           </el-popover>
 
-          <span class="header-username">{{ authStore.displayName }}</span>
+          <span class="header-username hide-on-narrow">{{ authStore.displayName }}</span>
           <el-dropdown trigger="click" @command="handleCommand">
             <el-avatar
               :icon="!avatarUrl ? UserFilled : undefined"
@@ -217,21 +250,27 @@ onBeforeUnmount(() => {
       </el-header>
 
       <el-container class="layout-body">
+        <div
+          v-if="isMobile && mobileSidebarOpen"
+          class="sidebar-backdrop"
+          aria-hidden="true"
+          @click="mobileSidebarOpen = false"
+        />
         <el-aside
-          :width="sidebarCollapsed ? '0px' : '220px'"
+          :width="isMobile ? '240px' : (sidebarCollapsed ? '0px' : '220px')"
           class="layout-aside"
-          :class="{ 'is-collapsed': sidebarCollapsed }"
-          :inert="sidebarCollapsed"
-          :aria-hidden="sidebarCollapsed"
+          :class="{
+            'is-collapsed': !isMobile && sidebarCollapsed,
+            'is-mobile': isMobile,
+            'is-open': isMobile && mobileSidebarOpen
+          }"
+          :inert="isMobile ? !mobileSidebarOpen : sidebarCollapsed"
+          :aria-hidden="isMobile ? !mobileSidebarOpen : sidebarCollapsed"
         >
           <el-menu :default-active="activeMenu" router class="aside-menu">
             <el-menu-item index="/chat">
               <el-icon><ChatDotRound /></el-icon>
               <span>聊天</span>
-            </el-menu-item>
-            <el-menu-item index="/wardrobe">
-              <el-icon><ShoppingBag /></el-icon>
-              <span>衣橱</span>
             </el-menu-item>
             <el-menu-item index="/task">
               <el-icon><Calendar /></el-icon>
@@ -240,10 +279,6 @@ onBeforeUnmount(() => {
             <el-menu-item index="/relationship">
               <el-icon><Star /></el-icon>
               <span>关系</span>
-            </el-menu-item>
-            <el-menu-item index="/memory">
-              <el-icon><Notebook /></el-icon>
-              <span>记忆</span>
             </el-menu-item>
             <el-menu-item index="/settings">
               <el-icon><Setting /></el-icon>
@@ -278,6 +313,7 @@ onBeforeUnmount(() => {
 }
 
 .layout-container {
+  --app-header-height: 60px;
   height: 100%;
 }
 
@@ -285,6 +321,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: var(--app-header-height);
   background: #fff;
   border-bottom: 1px solid var(--el-border-color);
 }
@@ -335,7 +372,7 @@ onBeforeUnmount(() => {
 }
 
 .layout-body {
-  height: calc(100% - 60px);
+  height: calc(100% - var(--app-header-height));
 }
 
 .layout-aside {
@@ -363,11 +400,54 @@ onBeforeUnmount(() => {
   background: #f5f7fa;
   overflow-y: auto;
 }
+
+/* 窄屏：侧栏改为覆盖式抽屉，桌面布局不受影响 */
+@media (max-width: 900px) {
+  .layout-aside.is-mobile {
+    position: fixed;
+    top: var(--app-header-height);
+    bottom: 0;
+    left: 0;
+    z-index: 2100;
+    width: 240px !important;
+    border-right: 1px solid var(--el-border-color);
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .layout-aside.is-mobile.is-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 16px rgba(15, 23, 42, 0.18);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    top: var(--app-header-height);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 2000;
+    background: rgba(15, 23, 42, 0.35);
+  }
+
+  .aside-menu :deep(.el-menu-item) {
+    min-height: 48px;
+  }
+}
+
+/* 横屏矮视口：压缩头部高度，给内容让出空间 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .layout-container {
+    --app-header-height: 48px;
+  }
+}
 </style>
 
 <style>
 .notification-popper {
   padding: 0 !important;
+  max-width: calc(100vw - 24px);
 }
 
 .notification-panel {

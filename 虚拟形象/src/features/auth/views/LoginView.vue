@@ -4,10 +4,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { login, getCaptcha } from '@/shared/api/user'
 import { sm3Encrypt } from '@/shared/utils/sm3'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { useAuthStore } from '@/shared/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { matches: isMobile } = useMediaQuery('(max-width: 900px)')
 const formRef = ref(null)
 const loading = ref(false)
 
@@ -129,7 +131,7 @@ async function handleLogin() {
 <template>
   <div class="login-page">
     <el-splitter class="login-splitter">
-      <el-splitter-panel size="30%">
+      <el-splitter-panel v-if="!isMobile" size="30%">
         <div class="left-panel">
           <div class="brand-block">
             <div class="pixel-avatar">
@@ -145,8 +147,9 @@ async function handleLogin() {
           </div>
         </div>
       </el-splitter-panel>
-      <el-splitter-panel :min="320">
+      <el-splitter-panel :min="isMobile ? 0 : 320">
         <div class="right-panel">
+          <div v-if="isMobile" class="mobile-brand">虚拟形象</div>
           <div class="login-card">
             <h2 class="title">用户登录</h2>
             <el-form
@@ -379,5 +382,31 @@ async function handleLogin() {
 .link-sep {
   margin: 0 8px;
   color: #dcdfe6;
+}
+
+@media (max-width: 900px) {
+  .login-page {
+    height: 100dvh;
+  }
+
+  .right-panel {
+    flex-direction: column;
+    gap: 20px;
+    padding: 24px 16px;
+  }
+
+  .mobile-brand {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #141c2b;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 28px 20px;
+    box-shadow: none;
+  }
 }
 </style>

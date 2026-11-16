@@ -13,10 +13,12 @@ import {
   updateTask
 } from '@/shared/api/task'
 import { getRelationship } from '@/shared/api/relationship'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { useNotificationStore } from '@/shared/stores/notification'
 
 const router = useRouter()
 const notificationStore = useNotificationStore()
+const { matches: isMobile } = useMediaQuery('(max-width: 900px)')
 
 const loading = ref(false)
 const tasks = ref([])
@@ -531,7 +533,8 @@ onBeforeUnmount(() => {
         </div>
       </template>
 
-      <el-table v-loading="loading" :data="tasks" empty-text="还没有任务">
+      <div class="table-scroll">
+        <el-table v-loading="loading" :data="tasks" empty-text="还没有任务">
         <el-table-column label="任务" min-width="220">
           <template #default="{ row }">
             <div class="task-title">{{ row.title }}</div>
@@ -572,7 +575,8 @@ onBeforeUnmount(() => {
             <el-button v-else link type="primary" @click="handleRestore(row)">恢复</el-button>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </div>
 
       <div class="pagination">
         <el-pagination
@@ -588,10 +592,16 @@ onBeforeUnmount(() => {
     <el-dialog
       v-model="taskDialogVisible"
       :title="taskDialogMode === 'create' ? '新建任务' : '编辑任务'"
-      width="520px"
+      width="min(520px, 92vw)"
       destroy-on-close
     >
-      <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-width="96px">
+      <el-form
+        ref="taskFormRef"
+        :model="taskForm"
+        :rules="taskRules"
+        :label-position="isMobile ? 'top' : 'right'"
+        :label-width="isMobile ? 'auto' : '96px'"
+      >
         <el-form-item label="标题" prop="title">
           <el-input v-model="taskForm.title" maxlength="200" show-word-limit placeholder="例如：交周报" />
         </el-form-item>
@@ -653,7 +663,7 @@ onBeforeUnmount(() => {
     <el-dialog
       v-model="responseDialogVisible"
       :title="responseCorrecting ? '修正完成度' : '这次做得怎么样？'"
-      width="520px"
+      width="min(520px, 92vw)"
       destroy-on-close
       @closed="closeResponse"
     >
@@ -992,9 +1002,13 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .page-header {
     flex-direction: column;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
   }
 
   .relationship-main {
@@ -1007,9 +1021,22 @@ onBeforeUnmount(() => {
     justify-content: space-between;
   }
 
+  .card-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
   .occurrence-item {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .occurrence-actions {
+    align-self: flex-end;
+  }
+
+  .pagination {
+    justify-content: center;
   }
 
   .result-grid {

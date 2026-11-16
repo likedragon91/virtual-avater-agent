@@ -13,11 +13,13 @@ import {
   MoreFilled,
   Plus,
   Promotion,
+  User,
   Warning
 } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import PixelStage from '@/features/avatar/components/PixelStage.vue'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useChatStore } from '@/shared/stores/chat'
 import { getCurrentPersona, getPersonaOptions } from '@/shared/api/persona'
@@ -38,12 +40,34 @@ const STAGE_COLLAPSED_KEY = 'ui:chat:stageCollapsed'
 const sessionsCollapsed = ref(localStorage.getItem(SESSIONS_COLLAPSED_KEY) === '1')
 const stageCollapsed = ref(localStorage.getItem(STAGE_COLLAPSED_KEY) === '1')
 
+// 窄屏：会话列表改为抽屉，形象舞台改为底部浮层
+const { matches: isMobile } = useMediaQuery('(max-width: 900px)')
+const mobileSessionsOpen = ref(false)
+const mobileStageOpen = ref(false)
+
+watch(isMobile, (mobile) => {
+  if (!mobile) {
+    mobileSessionsOpen.value = false
+    mobileStageOpen.value = false
+  }
+})
+
 function toggleSessions() {
+  if (isMobile.value) {
+    mobileSessionsOpen.value = !mobileSessionsOpen.value
+    if (mobileSessionsOpen.value) mobileStageOpen.value = false
+    return
+  }
   sessionsCollapsed.value = !sessionsCollapsed.value
   localStorage.setItem(SESSIONS_COLLAPSED_KEY, sessionsCollapsed.value ? '1' : '0')
 }
 
 function toggleStage() {
+  if (isMobile.value) {
+    mobileStageOpen.value = !mobileStageOpen.value
+    if (mobileStageOpen.value) mobileSessionsOpen.value = false
+    return
+  }
   stageCollapsed.value = !stageCollapsed.value
   localStorage.setItem(STAGE_COLLAPSED_KEY, stageCollapsed.value ? '1' : '0')
 }
@@ -187,8 +211,12 @@ async function loadPersonaOptions() {
 }
 
 async function handleSelect(session) {
-  if (session.id === chat.currentSessionId) return
+  if (session.id === chat.currentSessionId) {
+    if (isMobile.value) mobileSessionsOpen.value = false
+    return
+  }
   await chat.selectSession(session.id)
+  if (isMobile.value) mobileSessionsOpen.value = false
 }
 
 async function handleRename(session) {
@@ -316,11 +344,30 @@ onMounted(async () => {
     class="chat-view"
     :class="{
       'sessions-collapsed': sessionsCollapsed,
-      'stage-collapsed': stageCollapsed
+      'stage-collapsed': stageCollapsed,
+      'mobile-sessions-open': mobileSessionsOpen,
+      'mobile-stage-open': mobileStageOpen
     }"
   >
+    <div
+      v-if="isMobile && mobileSessionsOpen"
+      class="session-backdrop"
+      aria-hidden="true"
+      @click="mobileSessionsOpen = false"
+    />
+    <div
+      v-if="isMobile && mobileStageOpen"
+      class="stage-backdrop"
+      aria-hidden="true"
+      @click="mobileStageOpen = false"
+    />
+
     <!-- 左侧：会话列表 -->
-    <aside class="session-panel" :inert="sessionsCollapsed" :aria-hidden="sessionsCollapsed">
+    <aside
+      class="session-panel"
+      :inert="isMobile ? !mobileSessionsOpen : sessionsCollapsed"
+      :aria-hidden="isMobile ? !mobileSessionsOpen : sessionsCollapsed"
+    >
       <div class="panel-head">
         <span class="panel-title">对话</span>
         <div class="panel-actions">
@@ -395,7 +442,16 @@ onMounted(async () => {
     <section class="chat-card">
       <header class="chat-head">
         <div class="chat-head-left">
-          <el-tooltip v-if="sessionsCollapsed" content="展开会话列表" placement="bottom">
+          <el-button
+            v-if="isMobile"
+            text
+            circle
+            size="small"
+            :icon="ChatDotRound"
+            aria-label="打开会话列表"
+            @click="toggleSessions"
+          />
+          <el-tooltip v-else-if="sessionsCollapsed" content="展开会话列表" placement="bottom">
             <el-button text circle size="small" :icon="ArrowRightBold" @click="toggleSessions" />
           </el-tooltip>
           <div class="chat-head-title">
@@ -410,7 +466,16 @@ onMounted(async () => {
           </div>
         </div>
         <div class="chat-head-actions">
-          <el-tooltip v-if="stageCollapsed" content="展开虚拟形象" placement="bottom">
+          <el-button
+            v-if="isMobile"
+            text
+            circle
+            size="small"
+            :icon="User"
+            aria-label="查看虚拟形象"
+            @click="toggleStage"
+          />
+          <el-tooltip v-else-if="stageCollapsed" content="展开虚拟形象" placement="bottom">
             <el-button text circle size="small" :icon="ArrowLeftBold" @click="toggleStage" />
           </el-tooltip>
           <el-button
@@ -418,6 +483,7 @@ onMounted(async () => {
             text
             size="small"
             :icon="EditPen"
+            class="hide-on-narrow"
             @click="handleRename(chat.currentSession)"
           >
             重命名
@@ -548,8 +614,13 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- 右侧：虚拟形象 -->
-    <section class="stage-card" :inert="stageCollapsed" :aria-hidden="stageCollapsed">
+    <!-- 右侧：虚拟形象（窄屏下按需挂载为底部浮层） -->
+    <section
+      v-if="!isMobile || mobileStageOpen"
+      class="stage-card"
+      :inert="!isMobile && stageCollapsed"
+      :aria-hidden="!isMobile && stageCollapsed"
+    >
       <header class="stage-head">
         <span class="stage-title">虚拟形象</span>
         <div class="stage-head-actions">
@@ -565,7 +636,7 @@ onMounted(async () => {
     <el-dialog
       v-model="newSessionDialogVisible"
       title="新建会话"
-      width="460px"
+      width="min(460px, 92vw)"
       append-to-body
     >
       <el-form label-width="72px">
@@ -1103,6 +1174,95 @@ onMounted(async () => {
 
   .msg-main {
     max-width: 88%;
+  }
+}
+
+/* 窄屏：会话列表改为抽屉，形象舞台改为底部浮层 */
+@media (max-width: 900px) {
+  .chat-view,
+  .chat-view.sessions-collapsed,
+  .chat-view.stage-collapsed,
+  .chat-view.sessions-collapsed.stage-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    height: calc(100vh - var(--app-header-height, 60px) - 40px);
+    height: calc(100dvh - var(--app-header-height, 60px) - 40px);
+    min-height: 0;
+  }
+
+  .session-panel {
+    position: fixed;
+    top: var(--app-header-height, 60px);
+    bottom: 0;
+    left: 0;
+    z-index: 2200;
+    width: min(280px, 80vw);
+    max-height: none;
+    border-radius: 0;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  /* 覆盖桌面端“收起”时的隐藏样式，移动端由抽屉状态控制 */
+  .chat-view.sessions-collapsed .session-panel,
+  .chat-view.stage-collapsed .stage-card {
+    display: flex;
+    opacity: 1;
+    pointer-events: auto;
+    border-color: var(--el-border-color-light);
+  }
+
+  .chat-view.mobile-sessions-open .session-panel {
+    transform: translateX(0);
+    box-shadow: 4px 0 16px rgba(15, 23, 42, 0.18);
+  }
+
+  .session-backdrop,
+  .stage-backdrop {
+    position: fixed;
+    inset: var(--app-header-height, 60px) 0 0;
+    z-index: 2100;
+    background: rgba(15, 23, 42, 0.35);
+  }
+
+  .stage-card {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    z-index: 2200;
+    height: min(60vh, 420px);
+    min-height: 0;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.25);
+  }
+
+  .stage-tip {
+    display: none;
+  }
+
+  .message-area {
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .msg-main {
+    max-width: 92%;
+  }
+
+  .chat-title-text {
+    max-width: 36vw;
+  }
+
+  .chat-head {
+    padding: 8px 10px;
+  }
+
+  .composer {
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .composer-actions .el-button {
+    min-height: 44px;
   }
 }
 

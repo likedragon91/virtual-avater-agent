@@ -19,9 +19,11 @@ import {
   unsubscribeBrowserPush,
   getExistingPushSubscription
 } from '@/shared/utils/push'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { matches: isMobile } = useMediaQuery('(max-width: 900px)')
 
 const userTypeText = computed(() => {
   const map = { 1: '普通用户', 2: '管理员', 3: 'VIP' }
@@ -326,7 +328,7 @@ async function handleLogout() {
         <span class="card-title">形象档案</span>
       </template>
 
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="isMobile ? 1 : 2" border>
         <el-descriptions-item
           v-for="item in avatarProfile"
           :key="item.label"
@@ -351,7 +353,7 @@ async function handleLogout() {
         </div>
       </template>
 
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="isMobile ? 1 : 2" border>
         <el-descriptions-item label="账号">
           {{ authStore.userInfo.username || '-' }}
         </el-descriptions-item>
@@ -516,14 +518,15 @@ async function handleLogout() {
     <el-dialog
       v-model="profileDialogVisible"
       title="编辑个人资料"
-      width="480px"
+      width="min(480px, 92vw)"
       destroy-on-close
     >
       <el-form
         ref="profileFormRef"
         :model="profileForm"
         :rules="profileRules"
-        label-width="80px"
+        :label-position="isMobile ? 'top' : 'right'"
+        :label-width="isMobile ? 'auto' : '80px'"
       >
         <el-form-item label="昵称" prop="nickname">
           <el-input v-model="profileForm.nickname" maxlength="50" show-word-limit />
@@ -756,13 +759,59 @@ async function handleLogout() {
   gap: 8px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 900px) {
+  .card-header {
+    flex-wrap: wrap;
+  }
+
+  .persona-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trait-row {
+    grid-template-columns: 64px minmax(0, 1fr) 40px;
+    gap: 8px;
+  }
+
+  .persona-footer {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
   .notification-row {
     flex-wrap: wrap;
   }
 
+  .notification-label {
+    width: 100%;
+  }
+
+  .time-picker {
+    flex: 1;
+    min-width: 110px;
+  }
+
+  .notification-actions {
+    justify-content: stretch;
+  }
+
+  .notification-actions .el-button {
+    width: 100%;
+  }
+
   .push-row {
     flex-direction: column;
+  }
+
+  .push-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .push-actions .el-button {
+    flex: 1;
+    min-height: 44px;
+    margin-left: 0;
   }
 }
 

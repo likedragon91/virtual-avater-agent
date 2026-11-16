@@ -4,10 +4,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { register } from '@/shared/api/user'
 import { sm3Encrypt } from '@/shared/utils/sm3'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 
 const router = useRouter()
 const formRef = ref(null)
 const loading = ref(false)
+const { matches: isMobile } = useMediaQuery('(max-width: 900px)')
 
 const form = reactive({
   username: '',
@@ -102,7 +104,7 @@ function goLogin() {
 <template>
   <div class="register-page">
     <el-splitter class="register-splitter">
-      <el-splitter-panel size="30%">
+      <el-splitter-panel v-if="!isMobile" size="30%">
         <div class="left-panel">
           <div class="brand-block">
             <h1 class="brand-title">虚拟形象</h1>
@@ -110,8 +112,9 @@ function goLogin() {
           </div>
         </div>
       </el-splitter-panel>
-      <el-splitter-panel :min="360">
+      <el-splitter-panel :min="isMobile ? 0 : 360">
         <div class="right-panel">
+          <div v-if="isMobile" class="mobile-brand">虚拟形象</div>
           <div class="register-card">
             <h2 class="title">用户注册</h2>
             <el-form
@@ -253,5 +256,31 @@ function goLogin() {
   text-align: center;
   font-size: 14px;
   color: #909399;
+}
+
+@media (max-width: 900px) {
+  .register-page {
+    height: 100dvh;
+  }
+
+  .right-panel {
+    flex-direction: column;
+    gap: 20px;
+    padding: 24px 16px;
+  }
+
+  .mobile-brand {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #141c2b;
+  }
+
+  .register-card {
+    width: 100%;
+    max-width: 420px;
+    padding: 24px 20px;
+    box-shadow: none;
+  }
 }
 </style>

@@ -243,4 +243,31 @@ onBeforeUnmount(() => {
   text-align: center;
   font-size: 14px;
 }
+
+@media (max-width: 900px) {
+  .forgot-page {
+    min-height: 100dvh;
+    padding: 24px 16px;
+  }
+
+  .forgot-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 28px 20px 24px;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .code-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .code-row .el-button {
+    flex: none;
+    width: 100%;
+    min-height: 44px;
+  }
+}
 </style>

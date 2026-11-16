@@ -180,7 +180,8 @@ onMounted(async () => {
         </div>
       </template>
 
-      <el-table v-loading="logsLoading" :data="logs" empty-text="还没有成长记录">
+      <div class="table-scroll">
+        <el-table v-loading="logsLoading" :data="logs" empty-text="还没有成长记录">
         <el-table-column label="时间" width="170">
           <template #default="{ row }">{{ row.createdAt }}</template>
         </el-table-column>
@@ -205,7 +206,8 @@ onMounted(async () => {
             <span v-if="row.refId" class="muted"> #{{ row.refId }}</span>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </div>
 
       <div class="pagination">
         <el-pagination
@@ -396,12 +398,40 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+  }
+
+  .hero-card :deep(.el-card__body) {
+    padding: 18px 16px;
+  }
+
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .card-header {
+    flex-wrap: wrap;
+  }
+
   .stage-label {
     font-size: 12px;
+  }
+
+  .pagination {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .stat-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

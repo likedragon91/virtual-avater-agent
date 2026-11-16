@@ -92,13 +92,14 @@ onUnmounted(stopOnlineTimer)
       </div>
     </template>
 
-    <el-table
-      v-loading="onlineLoading"
-      :data="onlineData"
-      empty-text="当前暂无在线用户"
-      style="width: 100%"
-      height="400"
-    >
+    <div class="table-scroll">
+      <el-table
+        v-loading="onlineLoading"
+        :data="onlineData"
+        empty-text="当前暂无在线用户"
+        style="width: 100%"
+        height="400"
+      >
       <el-table-column prop="username" label="账号" min-width="150" />
       <el-table-column label="昵称" min-width="150">
         <template #default="{ row }">
@@ -117,7 +118,8 @@ onUnmounted(stopOnlineTimer)
           {{ onlineDuration(row) }}
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
+    </div>
   </el-card>
 </template>
 
@@ -141,5 +143,16 @@ onUnmounted(stopOnlineTimer)
 .refresh-tip {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+@media (max-width: 900px) {
+  .card-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .card-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

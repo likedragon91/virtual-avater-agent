@@ -1,0 +1,71 @@
+/*
+ * 全局响应式约定
+ *
+ * 断点：
+ * - 主断点 900px：手机 / 窄屏布局
+ * - 次断点 768px：更窄屏幕的细节调整
+ * - 横屏矮视口：压缩纵向留白
+ *
+ * 注意：桌面样式不使用 max-width，保证 ≥901px 时媒体查询不触发，
+ * 现有 Windows 视感零变化。
+ */
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (max-width: 900px) {
+  /*
+   * iOS 在输入框字号小于 16px 时聚焦会自动放大页面。
+   * 这里覆盖 Element Plus 的 14px 默认值。
+   */
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select,
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 16px;
+  }
+
+  /* 主要触控目标不小于 44×44px */
+  .touch-target {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* 宽表格统一横向滚动，避免撑破页面 */
+  .table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-scroll > .el-table {
+    min-width: 640px;
+  }
+
+  /* 底部安全区（刘海屏 / 手势条） */
+  .safe-bottom {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 768px) {
+  .hide-on-narrow {
+    display: none !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  /* 横屏矮视口：减少上下留白，优先保证内容高度 */
+  .el-card__body {
+    padding: 12px;
+  }
+
+  .el-card + .el-card {
+    margin-top: 12px;
+  }
+}
