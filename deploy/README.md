@@ -326,6 +326,47 @@ Flyway 迁移是前向的，不能单独回滚；只有数据被破坏时才使�
 - **VAPID 不要更换**：已有推送订阅会全部失效；HTTPS 前保持 `WEBPUSH_ENABLED=false`。
 - **业务数据不受影响**：更新只替换 jar 与前端 dist，数据库中的账号、关系、任务数据保持不变。
 
+## 9. 找回密码邮件排查
+
+前端点击「发送验证码」后，无论邮箱是否存在，接口都会返回成功（防止账号枚举）。**返回成功不代表邮件已发出**，需要看服务端日志。
+
+先把诊断脚本复制到服务器（如果服务器上有仓库，直接 `git pull` 后运行即可）：
+
+```bash
+sudo cp deploy/scripts/diagnose-mail.sh /opt/avatar-agent/scripts/
+sudo chmod 700 /opt/avatar-agent/scripts/diagnose-mail.sh
+```
+
+在浏览器触发一次发送验证码，然后运行：
+
+```bash
+sudo bash /opt/avatar-agent/scripts/diagnose-mail.sh <注册邮箱或用户名>
+```
+
+脚本只读，不发送邮件、不打印密码。重点看：
+
+| 输出 | 含义与处理 |
+| --- | --- |
+| 第 2/3 节缺少 `MAIL_*` | `/etc/avatar-agent/env` 未配置，或修改后没 `systemctl restart avatar-agent` |
+| 第 4 节 `password reset requested for unknown email` | 数据库 `user.email` 与输入不一致；用第 8 节确认 |
+| 第 4 节 `MAIL_HOST is empty` | 环境变量未加载 |
+| 第 4 节 `MAIL_FROM and MAIL_USERNAME are empty` | 至少配置一个，QQ/163 建议两者相同 |
+| 第 4 节 `send password reset mail failed` | SMTP 认证/连接失败，看紧随其后的异常 |
+| 第 5 节 TCP 连接失败 | 云厂商出站规则、防火墙或端口不对 |
+| 第 6 节 `SMTP LOGIN OK` | 账号密码与端口/SSL 组合正确 |
+| 第 7 节 `cooldown TTL` 为正 | 60 秒内重复请求会被静默忽略 |
+| 第 7 节 `code TTL` 为 -2 | 邮件发送失败后验证码键会被删除 |
+
+常见修复：
+
+- QQ/163 的 `MAIL_PASSWORD` 必须是 **SMTP 授权码**，不是邮箱登录密码；
+- QQ 要求 `MAIL_FROM` 与 `MAIL_USERNAME` 一致；
+- QQ/163 常用 `465 + MAIL_SSL_ENABLED=true + MAIL_STARTTLS_ENABLED=false`；
+- Gmail/Outlook 常用 `587 + MAIL_SSL_ENABLED=false + MAIL_STARTTLS_ENABLED=true`；
+- 在 Windows 上编辑过 env 文件时，确认没有 CRLF/BOM；
+- 修改 env 后必须重启：`sudo systemctl restart avatar-agent`；
+- 部分云厂商默认封锁出站 25/465/587，需要在安全组放行。
+
 ## 关键点
 
 - Service Worker 和 Web Push 只在安全上下文（HTTPS 或 localhost）下工作。
