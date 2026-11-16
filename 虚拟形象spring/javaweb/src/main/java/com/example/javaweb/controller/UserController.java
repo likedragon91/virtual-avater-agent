@@ -1,9 +1,15 @@
 package com.example.javaweb.controller;
 
+import com.example.javaweb.dto.request.ForgotPasswordCommandDTO;
+import com.example.javaweb.dto.request.ResetPasswordCommandDTO;
+import com.example.javaweb.dto.request.UpdateProfileCommandDTO;
+import com.example.javaweb.dto.request.UpdateUserStatusCommandDTO;
 import com.example.javaweb.dto.request.UserRegisterCommandDTO;
 import com.example.javaweb.dto.response.OnlineUserResponseDTO;
 import com.example.javaweb.dto.response.UserListResponseDTO;
 import com.example.javaweb.dto.response.UserLoginResponseDTO;
+import com.example.javaweb.security.CurrentUserResolver;
+import com.example.javaweb.service.PasswordResetService;
 import com.example.javaweb.service.UserService;
 import com.example.javaweb.config.JWTConfig;
 import jakarta.annotation.Resource;
@@ -12,10 +18,14 @@ import jakarta.validation.Valid;
 import com.example.javaweb.dto.request.UserLoginCommandDTO;
 import com.example.javaweb.common.Result;
 import com.example.javaweb.common.ResultCode;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,6 +41,12 @@ public class UserController {
 
     @Resource
     private JWTConfig jwtConfig;
+
+    @Resource
+    private CurrentUserResolver currentUserResolver;
+
+    @Resource
+    private PasswordResetService passwordResetService;
 
     //登录
     @PostMapping("/login")
@@ -76,6 +92,41 @@ public class UserController {
     @GetMapping("/online")
     public Result<List<OnlineUserResponseDTO>> online(){
         return userService.listOnlineUsers();
+    }
+
+    //当前用户编辑自己的资料：昵称、头像、手机、性别、生日
+    @PutMapping("/profile")
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> updateProfile(
+            @Valid @RequestBody UpdateProfileCommandDTO commandDTO,
+            Authentication authentication) {
+        Long userId = currentUserResolver.requireUserId(authentication);
+        return userService.updateProfile(userId, commandDTO);
+    }
+
+    //管理员修改用户状态：0-禁用，1-正常
+    @PreAuthorize("hasRole('ADMIN')")
+    @PatchMapping("/{id}/status")
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> updateStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUserStatusCommandDTO commandDTO,
+            Authentication authentication) {
+        Long adminId = currentUserResolver.requireUserId(authentication);
+        return userService.updateStatus(adminId, id, commandDTO);
+    }
+
+    //找回密码：发送邮箱验证码（公开接口，邮箱不存在也返回成功）
+    @PostMapping("/password/forgot")
+    public Result<Void> forgotPassword(@Valid @RequestBody ForgotPasswordCommandDTO commandDTO) {
+        passwordResetService.requestReset(commandDTO.getEmail());
+        return Result.success();
+    }
+
+    //找回密码：校验验证码并重置密码（公开接口）
+    @PostMapping("/password/reset")
+    public Result<Void> resetPassword(@Valid @RequestBody ResetPasswordCommandDTO commandDTO) {
+        passwordResetService.reset(commandDTO.getEmail(), commandDTO.getCode(),
+                commandDTO.getNewPassword(), commandDTO.getConfirmPassword());
+        return Result.success();
     }
 
     //退出登录：让当前 token 立即从在线列表中移除

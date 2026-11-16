@@ -34,7 +34,9 @@ public class SecurityConfig {
             "/",
             "/api/user/login",
             "/api/user/register",
-            "/api/user/captcha"
+            "/api/user/captcha",
+            "/api/user/password/forgot",
+            "/api/user/password/reset"
     };
 
     @Bean

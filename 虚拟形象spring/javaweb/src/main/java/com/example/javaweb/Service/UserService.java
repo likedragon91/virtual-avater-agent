@@ -4,6 +4,8 @@ package com.example.javaweb.service;
 import cn.hutool.core.util.IdUtil;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.javaweb.dto.request.UpdateProfileCommandDTO;
+import com.example.javaweb.dto.request.UpdateUserStatusCommandDTO;
 import com.example.javaweb.dto.request.UserLoginCommandDTO;
 import com.example.javaweb.dto.request.UserRegisterCommandDTO;
 import com.example.javaweb.dto.response.OnlineUserResponseDTO;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Service;
 import com.example.javaweb.common.Result;
 import com.example.javaweb.common.ResultCode;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
@@ -51,6 +54,9 @@ public class UserService {
 
     @Resource
     private TokenService tokenService;
+
+    @Resource
+    private UserAuthStateService userAuthStateService;
 
     public Result<UserLoginResponseDTO> login(UserLoginCommandDTO commandDTO){
         //校验验证码（放在最前面，防止密码被暴力枚举）
@@ -232,6 +238,14 @@ public class UserService {
         return userInfo;
     }
 
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     //表里的 display_name 列优先，为空时按编码映射兜底
     private static String resolve(String displayName, String fallback) {
         return (displayName != null && !displayName.isEmpty()) ? displayName : fallback;
@@ -267,6 +281,90 @@ public class UserService {
         }
     }
 
+
+    /**
+     * 用户自助编辑资料。只更新白名单字段，userType/status/username/email/password 不在此接口范围内。
+     */
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> updateProfile(
+            Long userId, UpdateProfileCommandDTO commandDTO) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+
+        if (commandDTO.getNickname() != null) {
+            user.setNickname(trimToNull(commandDTO.getNickname()));
+        }
+        if (commandDTO.getAvatar() != null) {
+            String avatar = trimToNull(commandDTO.getAvatar());
+            if (avatar != null && !avatar.startsWith("http://")
+                    && !avatar.startsWith("https://") && !avatar.startsWith("/")) {
+                throw new BusinessException("PARAM_ERROR", "头像地址格式不正确");
+            }
+            user.setAvatar(avatar);
+        }
+        if (commandDTO.getPhone() != null) {
+            user.setPhone(trimToNull(commandDTO.getPhone()));
+        }
+        if (commandDTO.getGender() != null) {
+            user.setGender(commandDTO.getGender());
+            user.setGenderDisplayName(mapGender(commandDTO.getGender()));
+        }
+        if (commandDTO.getBirthday() != null) {
+            String birthday = trimToNull(commandDTO.getBirthday());
+            if (birthday == null) {
+                user.setBirthday(null);
+            } else {
+                try {
+                    user.setBirthday(LocalDate.parse(birthday));
+                } catch (Exception e) {
+                    throw new BusinessException("PARAM_ERROR", "生日格式应为 yyyy-MM-dd");
+                }
+            }
+        }
+
+        user.setUpdatedAt(LocalDateTime.now());
+        userMapper.updateById(user);
+        userAuthStateService.evict(userId);
+        return Result.success(toUserDetail(user));
+    }
+
+    /**
+     * 管理员修改用户状态。0-禁用，1-正常。
+     * 不允许禁用自己，也不允许禁用最后一个可用管理员。
+     */
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> updateStatus(
+            Long adminId, Long targetId, UpdateUserStatusCommandDTO commandDTO) {
+        User target = userMapper.selectById(targetId);
+        if (target == null) {
+            throw new BusinessException("NOT_FOUND", "用户不存在");
+        }
+        int status = commandDTO.getStatus();
+        if (status == 0 && targetId.equals(adminId)) {
+            throw new BusinessException("FORBIDDEN", "不能禁用当前登录账号");
+        }
+        if (status == 0 && Integer.valueOf(2).equals(target.getUserType())) {
+            Long otherActiveAdmins = userMapper.selectCount(new LambdaQueryWrapper<User>()
+                    .eq(User::getUserType, UserType.ADMIN.getCode())
+                    .eq(User::getStatus, UserStatus.ENABLED.getCode())
+                    .ne(User::getId, targetId));
+            if (otherActiveAdmins == null || otherActiveAdmins == 0) {
+                throw new BusinessException("FORBIDDEN", "至少需要保留一个可用的管理员账号");
+            }
+        }
+
+        target.setStatus(status);
+        target.setStatusDisplayName(status == 1 ? "正常" : "禁用");
+        target.setUpdatedAt(LocalDateTime.now());
+        userMapper.updateById(target);
+
+        userAuthStateService.evict(targetId);
+        if (status == 0) {
+            tokenService.revokeAllForUser(targetId);
+            onlineUserService.removeUser(targetId);
+        }
+        return Result.success(toUserDetail(target));
+    }
 
     public Result<UserLoginResponseDTO.UserDetailResponseDTO> register(UserRegisterCommandDTO commandDTO){
         //验证密码是否一致

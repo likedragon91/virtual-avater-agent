@@ -90,6 +90,14 @@ public class OnlineUserService {
         }
     }
 
+    //强制移除某个用户的在线会话（管理员禁用账号时使用）
+    public void removeUser(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        redis.delete(ONLINE_KEY_PREFIX + userId);
+    }
+
     //获取仍活跃的会话
     public List<OnlineSession> listActive() {
         List<OnlineSession> sessions = new ArrayList<>();
