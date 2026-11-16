@@ -2,11 +2,14 @@
 node_modules/
 dist/
 dist-ssr/
+dist-electron/
+release/
 target/
 build/
 out/
 *.class
 *.war
+*.exe
 
 # ================= 本地配置与密钥 =================
 # application.properties 含数据库密码与 JWT 密钥，禁止提交
@@ -16,6 +19,8 @@ application-*.properties
 !application.properties.example
 .env
 .env.*
+!**/.env.example
+!**/.env.*.example
 *.pem
 *.key
 *.jks
