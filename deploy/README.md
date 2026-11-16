@@ -319,7 +319,7 @@ Flyway 迁移是前向的，不能单独回滚；只有数据被破坏时才使�
 
 - **旧会话需要重登一次**：旧 Access Token 没有 Refresh Token。浏览器端默认 30 分钟、Electron 默认 1 小时，到期后无法续期。
 - **PWA 验收需要安全上下文**：必须 HTTPS 或 localhost；直接访问服务器 IP 不行，国内机器需先完成域名备案。
-- **Electron 必须重新打包**：`npm run electron:build`；API 地址在 `.env.desktop` 中烘入，域名未变则地址不用改。
+- **Electron 必须重新打包**：`npm run electron:build`；API 地址在 `.env.desktop` 中烘入。未上 HTTPS 时用 `http://<SERVER_IP>/api`，上域名后改用 `https://<域名>/api` 再重新打包。
 - **CORS**：同域部署不依赖 CORS；收紧为具体域名时必须同时允许 Electron 的 `null` Origin，否则桌面端全断。
 - **TTL 覆盖变量名**：`JWT_ACCESS_EXPIRATION_WEB`、`JWT_ACCESS_EXPIRATION_DESKTOP`、`JWT_REFRESH_EXPIRATION_WEB`、`JWT_REFRESH_EXPIRATION_DESKTOP`；默认值已够用，本次不需要添加。
 - **VAPID 不要更换**：已有推送订阅会全部失效；HTTPS 前保持 `WEBPUSH_ENABLED=false`。

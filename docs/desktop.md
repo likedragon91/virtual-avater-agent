@@ -46,6 +46,8 @@ npm run electron:build
 2. `file://` 下使用 Hash 路由（`src/app/router/index.js` 已按协议自动切换）；
 3. `VITE_API_BASE_URL` 是绝对地址（`.env.desktop`）。
 
+云端尚未上 HTTPS 时填 `http://<SERVER_IP>/api`；完成域名 + HTTPS 后改为 `https://<域名>/api` 并重新打包。安装包会把该地址烘入产物，分发前务必确认。
+
 打包时默认使用 `node_modules/electron/dist`，避免重复下载。若 electron-builder 仍需要下载 NSIS 组件，可设置：
 
 ```bash
