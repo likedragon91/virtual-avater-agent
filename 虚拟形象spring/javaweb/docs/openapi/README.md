@@ -9,7 +9,7 @@
 | `javaweb-api.yaml` | **全量接口**：账号、验证码、Agent 会话、任务与闹钟、亲密度、人格、通知、通知设置、Web Push。前置 URL 已写为 `http://127.0.0.1:1107/api`。 |
 | `agent-workbench.yaml` | 仅 `/api/agent/**` 的 Agent 会话契约（`javaweb-api.yaml` 已包含这部分）。 |
 
-导入 `javaweb-api.yaml` 即可一次性获得项目全部 42 个接口。
+导入 `javaweb-api.yaml` 即可一次性获得项目全部 43 个接口。
 
 ## 单一事实来源
 
@@ -40,7 +40,9 @@ Apifox → 项目设置 → 导入数据 → OpenAPI / Swagger → 选择 `javaw
 
 ## 账号接口约定（当前 Apifox 导出里的需要注意）
 
-- 登录、注册、验证码、找回密码（发送验证码 / 重置密码）是**公开接口**，Apifox 里不要勾选 Bearer Token；
+- 登录、刷新会话、退出登录、注册、验证码、找回密码（发送验证码 / 重置密码）是**公开接口**，Apifox 里不要勾选 Bearer Token；
+- 登录请求可传 `clientType`：`DESKTOP`（Electron，Access 1h / Refresh 30d）或 `WEB`（浏览器 / PWA，Access 30min / Refresh 14d），缺省按 `WEB`；
+- 登录响应返回 `token`、`refreshToken`、`expiresIn`（秒）、`clientType`；`POST /user/refresh` 使用 `refreshToken` 轮换出新的一对凭证；
 - 登录 / 注册 / 重置密码的 `password`、`newPassword`、`confirmPassword` 都是前端 **SM3 后的 64 位十六进制摘要**，不是明文 `123456`；
 - 统一响应是 `{"code":"200","msg":"操作成功","data":...}`，不是 `{"code":0,"message":"ok"}`；
 - `/user/list` 需要管理员权限；
@@ -59,7 +61,7 @@ Apifox → 项目设置 → 导入数据 → OpenAPI / Swagger → 选择 `javaw
 
 `javaweb-api.yaml` 覆盖全部 Controller：
 
-- 账号：登录、注册、用户信息、用户列表（管理员）、在线用户（管理员）、退出登录、编辑个人资料、管理员修改用户状态
+- 账号：登录、刷新会话、注册、用户信息、用户列表（管理员）、在线用户（管理员）、退出登录、编辑个人资料、管理员修改用户状态
 - 验证码：`GET /user/captcha`
 - 找回密码：发送邮箱验证码、使用验证码重置密码
 - Agent 会话：会话 CRUD、历史消息、SSE 流式回答、停止生成

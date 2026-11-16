@@ -23,4 +23,8 @@ public class UserLoginCommandDTO {
     //用户输入的验证码
     @Size(max = 10, message = "验证码长度错误")
     private String captchaCode;
+
+    //客户端类型：DESKTOP（Electron）/ WEB（浏览器、PWA），缺省按 WEB
+    @Pattern(regexp = "^(DESKTOP|WEB|desktop|web)?$", message = "客户端类型不合法")
+    private String clientType;
 }

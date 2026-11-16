@@ -1,11 +1,11 @@
 package com.example.javaweb.util;
 
 
-import cn.hutool.core.util.IdUtil;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.example.javaweb.config.JWTConfig;
+import com.example.javaweb.enums.ClientType;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Component;
 
@@ -15,26 +15,39 @@ import java.util.Date;
 public class JWTTokenUtil {
     private static final String ISSUER = "javaweb";
 
+    public static final String TYPE_ACCESS = "access";
+    public static final String TYPE_REFRESH = "refresh";
+
     @Resource
     private JWTConfig jwtConfig;
 
-    //生成token的方法
-    public String generateToken(String userId, String username, Integer roleType) {
-        return generateToken(userId, username, roleType, IdUtil.fastSimpleUUID());
+    /** 签发 Access Token：typ=access，携带 sid 与 clientType。 */
+    public String generateAccessToken(String userId, String username, Integer roleType,
+                                      String sid, ClientType clientType, String jti) {
+        return generate(userId, username, roleType, sid, clientType, TYPE_ACCESS,
+                jwtConfig.accessExpiration(clientType), jti);
     }
 
-    //生成token并指定jti，jti用于在Redis中登记token白名单
-    public String generateToken(String userId, String username, Integer roleType, String jti) {
+    /** 签发 Refresh Token：typ=refresh，与 Access 共用 sid。 */
+    public String generateRefreshToken(String userId, String username, Integer roleType,
+                                       String sid, ClientType clientType, String jti) {
+        return generate(userId, username, roleType, sid, clientType, TYPE_REFRESH,
+                jwtConfig.refreshExpiration(clientType), jti);
+    }
+
+    private String generate(String userId, String username, Integer roleType, String sid,
+                            ClientType clientType, String tokenType, long ttlMillis, String jti) {
         try {
-            //生成签名的算法
             Algorithm algorithm = Algorithm.HMAC256(jwtConfig.getSecret());
-            //生成过期时间
-            Date expiration = new Date(System.currentTimeMillis() + jwtConfig.getExpiration());
-            //生成token
+            Date expiration = new Date(System.currentTimeMillis() + ttlMillis);
+            ClientType type = clientType == null ? ClientType.WEB : clientType;
             return JWT.create()
                     .withClaim("userId", userId)
                     .withClaim("username", username)
                     .withClaim("roleType", roleType)
+                    .withClaim("sid", sid)
+                    .withClaim("clientType", type.name())
+                    .withClaim("typ", tokenType)
                     .withJWTId(jti)//token唯一标识，用于Redis白名单
                     .withExpiresAt(expiration)//过期时间
                     .withIssuedAt(new Date())//签发时间
@@ -53,6 +66,31 @@ public class JWTTokenUtil {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    public String getSid(DecodedJWT decodedJWT) {
+        return decodedJWT.getClaim("sid").asString();
+    }
+
+    public String getTokenType(DecodedJWT decodedJWT) {
+        return decodedJWT.getClaim("typ").asString();
+    }
+
+    public String getClientType(DecodedJWT decodedJWT) {
+        return decodedJWT.getClaim("clientType").asString();
+    }
+
+    /**
+     * 是否为 Access Token。
+     * 兼容升级前签发的旧 token：旧 token 没有 typ 声明，按 Access 处理。
+     */
+    public boolean isAccessToken(DecodedJWT decodedJWT) {
+        String type = getTokenType(decodedJWT);
+        return type == null || type.isBlank() || TYPE_ACCESS.equals(type);
+    }
+
+    public boolean isRefreshToken(DecodedJWT decodedJWT) {
+        return TYPE_REFRESH.equals(getTokenType(decodedJWT));
     }
 
     //校验并解析token（校验签名、签发者、过期时间）

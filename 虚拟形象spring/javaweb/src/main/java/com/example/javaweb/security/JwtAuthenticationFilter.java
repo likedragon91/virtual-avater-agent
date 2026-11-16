@@ -55,6 +55,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 //校验并解析token
                 DecodedJWT decodedJWT = jwtTokenUtil.verifyToken(token);
+                //Refresh Token 不能当作访问凭证使用
+                if (!jwtTokenUtil.isAccessToken(decodedJWT)) {
+                    throw new IllegalStateException("需要 Access Token");
+                }
                 //token 必须在 Redis 白名单中（退出登录后会被撤销）
                 if (!tokenService.isValid(decodedJWT.getId())) {
                     throw new IllegalStateException("token 已失效");

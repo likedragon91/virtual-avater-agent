@@ -60,6 +60,7 @@ paths:
               password: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
               captchaId: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
               captchaCode: A1B2
+              clientType: WEB
       responses:
         '200':
           description: 登录成功
@@ -72,6 +73,9 @@ paths:
                 msg: 操作成功
                 data:
                   token: eyJhbGciOiJIUzI1NiJ9.xxx.yyy
+                  refreshToken: eyJhbGciOiJIUzI1NiJ9.rrr.zzz
+                  expiresIn: 1800
+                  clientType: WEB
                   roleType: 管理员
                   userInfo:
                     id: 1
@@ -90,6 +94,32 @@ paths:
                     displayName: kk
                     createdAt: "2025-08-30 12:00:01"
                     updatedAt: "2026-07-10 10:47:02"
+  /user/refresh:
+    post:
+      tags: [账号]
+      summary: 刷新会话
+      operationId: userRefresh
+      security: []
+      description: |
+        公开接口。使用 Refresh Token 换取新的 Access + Refresh（轮换）。
+        已经轮换过的 Refresh Token 再次提交会被判定为重放，并撤销该用户全部会话。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refreshToken: eyJhbGciOiJIUzI1NiJ9.rrr.zzz
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultLogin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /user/register:
     post:
       tags: [账号]
@@ -250,7 +280,17 @@ paths:
       tags: [账号]
       summary: 退出登录
       operationId: userLogout
-      description: 使当前 token 立即失效并从在线列表移除。
+      description: |
+        撤销整段会话（Access + Refresh）并移除在线记录。
+        接口允许公开访问：Access Token 已过期时，仍可仅凭 Refresh Token 撤销会话。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refreshToken: eyJhbGciOiJIUzI1NiJ9.rrr.zzz
       responses:
         '200':
           description: 退出成功
@@ -258,8 +298,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResultVoid'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
   /user/profile:
     put:
       tags: [账号]
@@ -1302,6 +1340,23 @@ components:
           maxLength: 10
           description: 用户输入的验证码
           example: A1B2
+        clientType:
+          type: string
+          enum: [DESKTOP, WEB]
+          default: WEB
+          description: |
+            客户端类型。DESKTOP（Electron）Access 1h / Refresh 30d；
+            WEB（浏览器、PWA）Access 30min / Refresh 14d。
+          example: WEB
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          maxLength: 4096
+          description: 登录或刷新接口返回的 refreshToken
+          example: eyJhbGciOiJIUzI1NiJ9.rrr.zzz
     RegisterRequest:
       type: object
       required: [username, email, password, confirmPassword]
@@ -1415,7 +1470,20 @@ components:
       properties:
         token:
           type: string
-          description: "JWT，后续请求放入 Authorization: Bearer <token>"
+          description: "Access Token，后续请求放入 Authorization: Bearer <token>"
+        refreshToken:
+          type: string
+          description: 刷新凭证；Electron 端应在主进程加密存储
+        expiresIn:
+          type: integer
+          format: int64
+          description: Access Token 有效期（秒）
+          example: 1800
+        clientType:
+          type: string
+          enum: [DESKTOP, WEB]
+          description: 本次登录使用的客户端类型
+          example: WEB
         roleType:
           type: string
           description: 角色显示名，如 普通用户 / 管理员 / VIP

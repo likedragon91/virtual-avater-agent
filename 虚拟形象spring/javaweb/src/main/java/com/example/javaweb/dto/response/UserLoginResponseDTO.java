@@ -5,6 +5,11 @@ import lombok.Data;
 @Data
 public class UserLoginResponseDTO {
     private String token;
+    private String refreshToken;
+    /** Access Token 有效期（秒） */
+    private Long expiresIn;
+    /** DESKTOP / WEB */
+    private String clientType;
     private String roleType;
     private UserDetailResponseDTO userInfo;
 

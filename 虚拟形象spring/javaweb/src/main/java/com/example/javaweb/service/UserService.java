@@ -11,7 +11,9 @@ import com.example.javaweb.dto.request.UserRegisterCommandDTO;
 import com.example.javaweb.dto.response.OnlineUserResponseDTO;
 import com.example.javaweb.dto.response.UserListResponseDTO;
 import com.example.javaweb.dto.response.UserLoginResponseDTO;
+import com.example.javaweb.config.JWTConfig;
 import com.example.javaweb.entity.User;
+import com.example.javaweb.enums.ClientType;
 import com.example.javaweb.enums.UserStatus;
 import com.example.javaweb.enums.UserType;
 import com.example.javaweb.exception.BusinessException;
@@ -45,6 +47,9 @@ public class UserService {
 
     @Resource
     private JWTTokenUtil jwtTokenUtil;
+
+    @Resource
+    private JWTConfig jwtConfig;
 
     @Resource
     private CaptchaService captchaService;
@@ -90,15 +95,29 @@ public class UserService {
             throw new BusinessException("用户已被禁用，请联系管理员启用");
         }
 
-        //登录成功：生成带 jti 的 token，写入 Redis 白名单并登记在线会话
-        String jti = IdUtil.fastSimpleUUID();
-        String token = jwtTokenUtil.generateToken(user.getId().toString(), user.getUsername(), user.getUserType(), jti);
-        tokenService.save(jti, user.getId());
+        //登录成功：签发 Access + Refresh，写入 Redis 白名单并登记在线会话
+        ClientType clientType = ClientType.from(commandDTO.getClientType());
+        long accessTtl = jwtConfig.accessExpiration(clientType);
+        long refreshTtl = jwtConfig.refreshExpiration(clientType);
+        String sid = IdUtil.fastSimpleUUID();
+        String accessJti = IdUtil.fastSimpleUUID();
+        String refreshJti = IdUtil.fastSimpleUUID();
+        String token = jwtTokenUtil.generateAccessToken(
+                user.getId().toString(), user.getUsername(), user.getUserType(),
+                sid, clientType, accessJti);
+        String refreshToken = jwtTokenUtil.generateRefreshToken(
+                user.getId().toString(), user.getUsername(), user.getUserType(),
+                sid, clientType, refreshJti);
+        tokenService.saveSession(sid, accessJti, refreshJti, user.getId(),
+                clientType.name(), accessTtl, refreshTtl);
         onlineUserService.register(token, user.getId(), user.getUsername(), user.getUserType());
 
         //组装返回数据
         UserLoginResponseDTO dto = new UserLoginResponseDTO();
         dto.setToken(token);
+        dto.setRefreshToken(refreshToken);
+        dto.setExpiresIn(accessTtl / 1000L);
+        dto.setClientType(clientType.name());
         dto.setRoleType(resolve(user.getUserTypeDisplayName(), mapUserType(user.getUserType())));
 
         dto.setUserInfo(toUserDetail(user));
@@ -199,21 +218,94 @@ public class UserService {
         return Result.success(records);
     }
 
-    //退出登录：撤销 Redis 白名单中的 token，并移除在线会话
-    public void logout(String token){
-        if (token == null || token.isBlank()) {
-            return;
+    //退出登录：撤销整段会话（Access + Refresh），并移除在线会话
+    public void logout(String token, String refreshToken){
+        if (token != null && !token.isBlank()) {
+            try {
+                DecodedJWT decodedJWT = jwtTokenUtil.verifyToken(token);
+                tokenService.revokeSessionByAccessJti(decodedJWT.getId());
+                onlineUserService.remove(
+                        jwtTokenUtil.getUserId(decodedJWT),
+                        decodedJWT.getClaim("username").asString(),
+                        token);
+            } catch (Exception ignored) {
+                //token 无效或已过期，无需撤销
+            }
         }
+        //Access Token 已失效时，仍可按 Refresh Token 找到 sid 并撤销会话
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            try {
+                DecodedJWT decodedJWT = jwtTokenUtil.verifyToken(refreshToken);
+                if (jwtTokenUtil.isRefreshToken(decodedJWT)) {
+                    tokenService.revokeSession(jwtTokenUtil.getSid(decodedJWT));
+                }
+            } catch (Exception ignored) {
+                //刷新凭证无效或已过期，同样无需处理
+            }
+        }
+    }
+
+    /**
+     * 刷新会话：校验 Refresh Token，轮换 Refresh，签发新的 Access。
+     * 检测到已轮换的 Refresh 被重放时，撤销该用户全部会话。
+     */
+    public Result<UserLoginResponseDTO> refresh(String refreshToken){
+        DecodedJWT decodedJWT;
         try {
-            DecodedJWT decodedJWT = jwtTokenUtil.verifyToken(token);
-            tokenService.revoke(decodedJWT.getId());
-            onlineUserService.remove(
-                    jwtTokenUtil.getUserId(decodedJWT),
-                    decodedJWT.getClaim("username").asString(),
-                    token);
-        } catch (Exception ignored) {
-            //token 无效或已过期，无需撤销
+            decodedJWT = jwtTokenUtil.verifyToken(refreshToken);
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "登录已过期，请重新登录");
         }
+        if (!jwtTokenUtil.isRefreshToken(decodedJWT)) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "刷新凭证无效");
+        }
+
+        String refreshJti = decodedJWT.getId();
+        if (tokenService.isRefreshReused(refreshJti)) {
+            // 重放：该 Refresh 已经被使用过，立即撤销整段会话
+            Long reusedUserId = tokenService.getUserIdByUsedRefresh(refreshJti);
+            tokenService.revokeAllForUser(reusedUserId);
+            throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "刷新凭证已失效，请重新登录");
+        }
+        if (!tokenService.isRefreshValid(refreshJti)) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "登录已过期，请重新登录");
+        }
+
+        String sid = jwtTokenUtil.getSid(decodedJWT);
+        TokenService.SessionRecord session = tokenService.getSession(sid);
+        if (session == null || session.userId() == null) {
+            tokenService.revokeSession(sid);
+            throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "登录已过期，请重新登录");
+        }
+
+        User user = userMapper.selectById(session.userId());
+        if (user == null || !user.isActive()) {
+            tokenService.revokeAllForUser(session.userId());
+            throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "登录状态已失效");
+        }
+
+        ClientType clientType = ClientType.from(session.clientType());
+        long accessTtl = jwtConfig.accessExpiration(clientType);
+        long refreshTtl = jwtConfig.refreshExpiration(clientType);
+        String newAccessJti = IdUtil.fastSimpleUUID();
+        String newRefreshJti = IdUtil.fastSimpleUUID();
+        String newToken = jwtTokenUtil.generateAccessToken(
+                user.getId().toString(), user.getUsername(), user.getUserType(),
+                sid, clientType, newAccessJti);
+        String newRefreshToken = jwtTokenUtil.generateRefreshToken(
+                user.getId().toString(), user.getUsername(), user.getUserType(),
+                sid, clientType, newRefreshJti);
+        tokenService.rotate(sid, refreshJti, newAccessJti, newRefreshJti,
+                user.getId(), clientType.name(), accessTtl, refreshTtl);
+
+        UserLoginResponseDTO dto = new UserLoginResponseDTO();
+        dto.setToken(newToken);
+        dto.setRefreshToken(newRefreshToken);
+        dto.setExpiresIn(accessTtl / 1000L);
+        dto.setClientType(clientType.name());
+        dto.setRoleType(resolve(user.getUserTypeDisplayName(), mapUserType(user.getUserType())));
+        dto.setUserInfo(toUserDetail(user));
+        return Result.success(dto);
     }
 
     //把用户实体转换成响应数据（login / register / message 共用）

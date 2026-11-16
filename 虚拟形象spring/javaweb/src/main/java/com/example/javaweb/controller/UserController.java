@@ -1,6 +1,7 @@
 package com.example.javaweb.controller;
 
 import com.example.javaweb.dto.request.ForgotPasswordCommandDTO;
+import com.example.javaweb.dto.request.RefreshTokenCommandDTO;
 import com.example.javaweb.dto.request.ResetPasswordCommandDTO;
 import com.example.javaweb.dto.request.UpdateProfileCommandDTO;
 import com.example.javaweb.dto.request.UpdateUserStatusCommandDTO;
@@ -53,6 +54,12 @@ public class UserController {
     public Result<UserLoginResponseDTO> login(@Valid @RequestBody UserLoginCommandDTO commandDTO){
         //调用服务层方法
         return userService.login(commandDTO);
+    }
+
+    //刷新会话：用 Refresh Token 换取新的 Access + Refresh（公开端点）
+    @PostMapping("/refresh")
+    public Result<UserLoginResponseDTO> refresh(@Valid @RequestBody RefreshTokenCommandDTO commandDTO){
+        return userService.refresh(commandDTO.getRefreshToken());
     }
 
     //注册
@@ -129,12 +136,16 @@ public class UserController {
         return Result.success();
     }
 
-    //退出登录：让当前 token 立即从在线列表中移除
+    //退出登录：撤销整段会话并让当前 token 立即从在线列表移除
     @PostMapping("/logout")
-    public Result<Void> logout(HttpServletRequest request){
+    public Result<Void> logout(HttpServletRequest request,
+                              @RequestBody(required = false) RefreshTokenCommandDTO commandDTO){
+        String refreshToken = commandDTO == null ? null : commandDTO.getRefreshToken();
         String header = request.getHeader(jwtConfig.getHeader());
         if (header != null && header.startsWith(jwtConfig.getTokenPrefix())) {
-            userService.logout(header.substring(jwtConfig.getTokenPrefix().length()).trim());
+            userService.logout(header.substring(jwtConfig.getTokenPrefix().length()).trim(), refreshToken);
+        } else {
+            userService.logout(null, refreshToken);
         }
         return Result.success();
     }
