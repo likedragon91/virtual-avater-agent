@@ -1,56 +1,78 @@
-// 生成 256×256 像素风应用图标（PNG + ICO），无需额外依赖。
+// 生成桌面图标与 PWA 图标，无需额外依赖。
 // 用法：node scripts/generate-icon.mjs
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 
-const SIZE = 256
-const pixels = Buffer.alloc(SIZE * SIZE * 4)
+const NAVY = [20, 28, 43, 255]
+const SKIN = [242, 201, 160, 255]
+const HAIR = [107, 75, 62, 255]
+const EYE = [43, 43, 58, 255]
+const MOUTH = [201, 106, 106, 255]
+const BLUE = [79, 134, 198, 255]
+const PINK = [242, 166, 184, 255]
+const YELLOW = [242, 193, 78, 255]
 
-function setPixel(x, y, [r, g, b, a = 255]) {
-  if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return
-  const offset = (y * SIZE + x) * 4
-  pixels[offset] = r
-  pixels[offset + 1] = g
-  pixels[offset + 2] = b
-  pixels[offset + 3] = a
-}
+function renderIcon(size, { maskable = false } = {}) {
+  const pixels = Buffer.alloc(size * size * 4)
+  const unit = (size / 256) * (maskable ? 0.8 : 1)
+  const offset = maskable ? size * 0.1 : 0
 
-function fillRect(x0, y0, x1, y1, color) {
-  for (let y = y0; y < y1; y += 1) {
-    for (let x = x0; x < x1; x += 1) {
-      setPixel(x, y, color)
+  const X = (value) => Math.round(offset + value * unit)
+  const Y = (value) => Math.round(offset + value * unit)
+  const R = (value) => Math.max(1, Math.round(value * unit))
+
+  const setPixel = (x, y, color) => {
+    if (x < 0 || y < 0 || x >= size || y >= size) return
+    const index = (y * size + x) * 4
+    pixels[index] = color[0]
+    pixels[index + 1] = color[1]
+    pixels[index + 2] = color[2]
+    pixels[index + 3] = color[3]
+  }
+
+  const fillRect = (x0, y0, x1, y1, color) => {
+    for (let y = Y(y0); y < Y(y1); y += 1) {
+      for (let x = X(x0); x < X(x1); x += 1) {
+        setPixel(x, y, color)
+      }
     }
   }
-}
 
-function fillCircle(cx, cy, radius, color) {
-  const r2 = radius * radius
-  for (let y = cy - radius; y <= cy + radius; y += 1) {
-    for (let x = cx - radius; x <= cx + radius; x += 1) {
-      const dx = x - cx
-      const dy = y - cy
-      if (dx * dx + dy * dy <= r2) setPixel(x, y, color)
+  const fillCircle = (cx, cy, radius, color) => {
+    const centerX = X(cx)
+    const centerY = Y(cy)
+    const r = R(radius)
+    const r2 = r * r
+    for (let y = centerY - r; y <= centerY + r; y += 1) {
+      for (let x = centerX - r; x <= centerX + r; x += 1) {
+        const dx = x - centerX
+        const dy = y - centerY
+        if (dx * dx + dy * dy <= r2) setPixel(x, y, color)
+      }
     }
   }
-}
 
-// 背景圆
-fillCircle(128, 128, 120, [20, 28, 43, 255])
-// 头发与脸
-fillRect(72, 58, 184, 130, [107, 75, 62, 255])
-fillRect(64, 90, 84, 150, [107, 75, 62, 255])
-fillRect(172, 90, 192, 150, [107, 75, 62, 255])
-fillRect(84, 96, 172, 208, [242, 201, 160, 255])
-// 眼睛
-fillRect(104, 136, 120, 154, [43, 43, 58, 255])
-fillRect(136, 136, 152, 154, [43, 43, 58, 255])
-// 嘴
-fillRect(112, 172, 144, 180, [201, 106, 106, 255])
-// 品牌三色点
-fillRect(196, 196, 212, 212, [79, 134, 198, 255])
-fillRect(212, 212, 228, 228, [242, 166, 184, 255])
-fillRect(180, 212, 196, 228, [242, 193, 78, 255])
+  if (maskable) {
+    // maskable 需要铺满画布，避免被系统圆形/圆角裁切
+    fillRect(0, 0, 256 / 0.8 + 25, 256 / 0.8 + 25, NAVY)
+  } else {
+    fillCircle(128, 128, 120, NAVY)
+  }
+
+  fillRect(72, 58, 184, 130, HAIR)
+  fillRect(64, 90, 84, 150, HAIR)
+  fillRect(172, 90, 192, 150, HAIR)
+  fillRect(84, 96, 172, 208, SKIN)
+  fillRect(104, 136, 120, 154, EYE)
+  fillRect(136, 136, 152, 154, EYE)
+  fillRect(112, 172, 144, 180, MOUTH)
+  fillRect(196, 196, 212, 212, BLUE)
+  fillRect(212, 212, 228, 228, PINK)
+  fillRect(180, 212, 196, 228, YELLOW)
+
+  return pixels
+}
 
 function crc32(buffer) {
   let crc = 0xffffffff
@@ -74,43 +96,61 @@ function chunk(type, data) {
   return result
 }
 
-const raw = Buffer.alloc((SIZE * 4 + 1) * SIZE)
-for (let y = 0; y < SIZE; y += 1) {
-  raw[y * (SIZE * 4 + 1)] = 0
-  pixels.copy(raw, y * (SIZE * 4 + 1) + 1, y * SIZE * 4, (y + 1) * SIZE * 4)
+function encodePng(size, pixels) {
+  const raw = Buffer.alloc((size * 4 + 1) * size)
+  for (let y = 0; y < size; y += 1) {
+    raw[y * (size * 4 + 1)] = 0
+    pixels.copy(raw, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4)
+  }
+
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr[8] = 8
+  ihdr[9] = 6
+  ihdr[10] = 0
+  ihdr[11] = 0
+  ihdr[12] = 0
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0))
+  ])
 }
 
-const ihdr = Buffer.alloc(13)
-ihdr.writeUInt32BE(SIZE, 0)
-ihdr.writeUInt32BE(SIZE, 4)
-ihdr[8] = 8
-ihdr[9] = 6
-ihdr[10] = 0
-ihdr[11] = 0
-ihdr[12] = 0
+function encodeIco(png) {
+  const header = Buffer.alloc(6)
+  header.writeUInt16LE(0, 0)
+  header.writeUInt16LE(1, 2)
+  header.writeUInt16LE(1, 4)
 
-const png = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  chunk('IHDR', ihdr),
-  chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-  chunk('IEND', Buffer.alloc(0))
-])
+  const entry = Buffer.alloc(16)
+  entry[0] = 0 // 256
+  entry[1] = 0 // 256
+  entry.writeUInt16LE(1, 4)
+  entry.writeUInt16LE(32, 6)
+  entry.writeUInt32LE(png.length, 8)
+  entry.writeUInt32LE(22, 12)
 
-const icoHeader = Buffer.alloc(6)
-icoHeader.writeUInt16LE(0, 0)
-icoHeader.writeUInt16LE(1, 2)
-icoHeader.writeUInt16LE(1, 4)
+  return Buffer.concat([header, entry, png])
+}
 
-const icoEntry = Buffer.alloc(16)
-icoEntry[0] = 0 // 256
-icoEntry[1] = 0 // 256
-icoEntry.writeUInt16LE(1, 4)
-icoEntry.writeUInt16LE(32, 6)
-icoEntry.writeUInt32LE(png.length, 8)
-icoEntry.writeUInt32LE(22, 12)
+const electronDir = path.join(process.cwd(), 'electron', 'assets')
+const pwaDir = path.join(process.cwd(), 'public', 'icons')
+fs.mkdirSync(electronDir, { recursive: true })
+fs.mkdirSync(pwaDir, { recursive: true })
 
-const outDir = path.join(process.cwd(), 'electron', 'assets')
-fs.mkdirSync(outDir, { recursive: true })
-fs.writeFileSync(path.join(outDir, 'icon.png'), png)
-fs.writeFileSync(path.join(outDir, 'icon.ico'), Buffer.concat([icoHeader, icoEntry, png]))
-console.log('icon generated:', path.join(outDir, 'icon.ico'))
+const desktopPng = encodePng(256, renderIcon(256))
+fs.writeFileSync(path.join(electronDir, 'icon.png'), desktopPng)
+fs.writeFileSync(path.join(electronDir, 'icon.ico'), encodeIco(desktopPng))
+
+fs.writeFileSync(path.join(pwaDir, 'icon-192.png'), encodePng(192, renderIcon(192)))
+fs.writeFileSync(path.join(pwaDir, 'icon-512.png'), encodePng(512, renderIcon(512)))
+fs.writeFileSync(
+  path.join(pwaDir, 'icon-512-maskable.png'),
+  encodePng(512, renderIcon(512, { maskable: true }))
+)
+
+console.log('icons generated:', electronDir, pwaDir)

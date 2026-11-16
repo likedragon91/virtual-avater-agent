@@ -20,6 +20,7 @@ npm install
 npm run dev            # http://localhost:5173
 npm run build          # Web / PWA：dist/
 npm run preview
+npm test               # Vitest
 
 # Electron
 npm run electron:dev   # 开发：加载 5173
@@ -111,8 +112,23 @@ src/
 - `contextIsolation + sandbox`，Refresh Token 由主进程 `safeStorage` 加密存储。
 - 构建与排错见仓库根目录 [`docs/desktop.md`](../docs/desktop.md)。
 
+## PWA
+
+- `public/manifest.webmanifest`：独立窗口、主题色、192/512 图标与 maskable 图标。
+- `public/sw.js`：应用壳缓存（导航 network-first、`/assets` 与 `/icons` cache-first、`/api` 不缓存）+ Web Push。
+- `src/main.js`：仅生产环境且非 Electron 时注册 Service Worker。
+- Android Chrome 可直接安装；iOS 16.4+ 需「添加到主屏幕」后授权通知。开发环境不注册 SW。
+
+## 测试
+
+```bash
+npm test
+```
+
+当前覆盖：并发刷新 single-flight、Refresh 失效判定、Access 临期自动刷新、401 刷新后重放、刷新失败清理登录态。
+
 ## Roadmap
 
 - **P1**：分环境 Refresh Token 静默续期、Electron 悬浮球壳与原生通知（已完成）。
-- **P2**：PWA（manifest / 图标 / Service Worker 缓存）、移动端 Web Push 真机验证。
-- **后续**：衣橱与记忆簿、i18n、前端单元测试覆盖扩展。
+- **P2**：PWA（manifest / 图标 / Service Worker 缓存）与最小测试（已完成；移动端 Web Push 需真机验证）。
+- **后续**：衣橱与记忆簿、i18n、前端测试覆盖扩展。

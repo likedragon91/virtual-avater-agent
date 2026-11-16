@@ -14,6 +14,26 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(ElementPlus, { locale: zhCn })
 
+// 生产 Web / PWA 注册 Service Worker；Electron（file://）不支持 SW
+function registerServiceWorker() {
+  if (!import.meta.env.PROD) return
+  if (typeof window === 'undefined') return
+  if (!('serviceWorker' in navigator)) return
+  if (window.desktopBridge?.isElectron) return
+
+  const register = () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.warn('Service Worker 注册失败', error)
+    })
+  }
+
+  if (document.readyState === 'complete') {
+    register()
+  } else {
+    window.addEventListener('load', register, { once: true })
+  }
+}
+
 // 先恢复会话（读取 Refresh Token，必要时静默续期），再挂载路由，避免首屏闪登录页
 async function start() {
   try {
@@ -23,6 +43,7 @@ async function start() {
   }
   app.use(router)
   app.mount('#app')
+  registerServiceWorker()
 }
 
 start()

@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "build:desktop": "vite build --mode desktop --base=./ --outDir=dist-electron",
     "electron:dev": "concurrently -k -s first \"vite\" \"wait-on tcp:127.0.0.1:5173 && electron electron/main.cjs --dev\"",
-    "electron:build": "npm run build:desktop && electron-builder --config electron-builder.yml"
+    "electron:build": "npm run build:desktop && electron-builder --config electron-builder.yml",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
@@ -30,7 +32,9 @@
     "concurrently": "^10.0.7",
     "electron": "^45.3.3",
     "electron-builder": "^26.18.0",
+    "jsdom": "^25.0.1",
     "vite": "^5.2.0",
+    "vitest": "^2.1.9",
     "wait-on": "^9.5.1"
   }
 }

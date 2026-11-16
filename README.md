@@ -9,7 +9,7 @@
 | Windows 桌面浏览器 | 现有桌面布局，宽屏三栏 / 双栏 | 已支持 |
 | 手机浏览器 | 同一份代码在 ≤900px 断点降级为单列布局 + 抽屉导航 | 已支持 |
 | Electron 悬浮球 | 透明置顶悬浮球 + 展开桌面窗口 + Windows 原生通知 | 已支持 |
-| PWA | manifest、独立窗口与 Web Push | 规划中 |
+| PWA | manifest、独立窗口、应用壳缓存与 Web Push | 已支持（需 HTTPS） |
 
 核心原则：桌面版和手机版不是两个项目，而是同一套源码在不同断点下的两种布局。
 
@@ -23,6 +23,7 @@
 - **通知**：站内通知 SSE、通知设置与免打扰、Web Push（VAPID）。
 - **管理端**：用户分页查询、启用/禁用、在线会话列表。
 - **像素舞台**：256×256 逻辑分辨率、最近邻采样、槽位分层、情绪映射与待机动画。
+- **PWA**：manifest、独立窗口、应用壳缓存；Web Push 需 HTTPS，iOS 需 16.4+ 并添加到主屏幕。
 - **规划中**：衣橱、记忆簿（路由保留，暂未在主导航展示）。
 
 ## 技术栈
@@ -124,6 +125,12 @@ npm run electron:build   # 打包：release/虚拟形象 Setup <version>.exe
 
 生产构建前需复制 `.env.desktop.example` 为 `.env.desktop` 并填写后端绝对地址。详见 [`docs/desktop.md`](docs/desktop.md)。
 
+### PWA
+
+- 生产构建后通过 HTTPS 访问，浏览器出现「安装应用」入口。
+- Android Chrome 可直接安装并接收 Web Push；iOS 16.4+ 需先「添加到主屏幕」再授权通知。
+- `public/sw.js` 负责应用壳缓存与推送接收；开发环境不注册 SW。
+
 ### 环境变量（后端）
 
 | 变量 | 必填 | 说明 |
@@ -168,5 +175,7 @@ CI 会在 push / PR 时执行后端测试与前端构建。
 
 1. **P0**：仓库可复现 + 全局响应式改造（已完成）。
 2. **P1**：Refresh Token 分环境策略、Electron 悬浮球与 Windows 原生通知（已完成）。
-3. **P2**：PWA 可安装、移动端 Web Push 真机验证、前端测试与技术文档完善。
+3. **P2**：PWA 可安装、应用壳缓存、前后端最小测试与文档完善（已完成；移动端 Web Push 需真机验证）。
 4. **后续**：衣橱与记忆簿功能、Docker Compose 部署、i18n。
+
+演示流程见 [`docs/demo.md`](docs/demo.md)。
