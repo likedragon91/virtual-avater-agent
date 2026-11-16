@@ -19,6 +19,34 @@ have() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# 安全解析 systemd EnvironmentFile：
+# 不能直接 source，因为 DB_URL 里含 & 等 shell 特殊字符。
+load_env_file() {
+    local file="$1"
+    local line key value
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in
+            ''|\#*) continue ;;
+        esac
+        case "$line" in
+            *=*) ;;
+            *) continue ;;
+        esac
+        key="${line%%=*}"
+        value="${line#*=}"
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        key="${key#$'\xef\xbb\xbf'}"
+        [ -z "$key" ] && continue
+        case "$value" in
+            \"*\") value="${value#\"}"; value="${value%\"}" ;;
+            \'*\') value="${value#\'}"; value="${value%\'}" ;;
+        esac
+        export "$key=$value"
+    done < "$file"
+}
+
 section "1. systemd 与配置文件"
 if have systemctl; then
     systemctl cat "$SERVICE" 2>/dev/null | sed -n '/\[Service\]/,/^\[/p' || echo "读取 systemd unit 失败"
@@ -78,11 +106,7 @@ fi
 
 section "5. SMTP 出站连通性"
 if [ -f "$ENV_FILE" ]; then
-    # shellcheck disable=SC1090
-    set -a
-    # shellcheck disable=SC1090
-    . "$ENV_FILE" 2>/dev/null || true
-    set +a
+    load_env_file "$ENV_FILE"
 fi
 
 HOST="${MAIL_HOST:-}"
@@ -153,13 +177,15 @@ else
 fi
 
 section "7. Redis 中的重置验证码/冷却键"
-if have redis-cli && [ -n "${REDIS_PASSWORD:-}" ]; then
+if have redis-cli; then
     REDIS_ARGS=(
         -h "${REDIS_HOST:-127.0.0.1}"
         -p "${REDIS_PORT:-6379}"
         -n "${REDIS_DATABASE:-0}"
     )
-    export REDISCLI_AUTH="$REDIS_PASSWORD"
+    if [ -n "${REDIS_PASSWORD:-}" ]; then
+        export REDISCLI_AUTH="$REDIS_PASSWORD"
+    fi
     redis-cli "${REDIS_ARGS[@]}" --scan --pattern 'auth:reset:*' 2>/dev/null | head -20 \
         || echo "无法读取 Redis"
     if [ -n "$TARGET" ]; then
@@ -171,7 +197,7 @@ if have redis-cli && [ -n "${REDIS_PASSWORD:-}" ]; then
     fi
     unset REDISCLI_AUTH
 else
-    echo "未找到 redis-cli 或未配置 REDIS_PASSWORD，跳过"
+    echo "未找到 redis-cli，跳过"
 fi
 
 section "8. 数据库中的邮箱记录"
