@@ -79,11 +79,15 @@ MAIL_STARTTLS_ENABLED=false
 WEB_PUSH_PUBLIC_KEY=...
 WEB_PUSH_PRIVATE_KEY=...
 WEB_PUSH_SUBJECT=mailto:admin@example.com
+# HTTPS 上线前保持 false；上线后再改为 true
+WEBPUSH_ENABLED=false
 ```
 
 ```bash
 sudo chmod 600 /etc/avatar-agent/env
 ```
+
+> Web Push 的 VAPID 密钥不要更换，否则所有已有推送订阅都会失效。
 
 ### 邮件服务（找回密码）
 
@@ -183,6 +187,13 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+配置已包含：
+
+- `/sw.js` 禁止缓存；
+- `/manifest.webmanifest` 使用 `application/manifest+json` 并禁止长期缓存；
+- `/assets/` 长缓存；
+- `/api/` 关闭代理缓冲并加长 SSE 超时。
+
 ### 没有域名时先用 IP 测试
 
 如果暂时只有服务器 IP，可先使用 HTTP 配置：
@@ -194,7 +205,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 然后浏览器访问 `http://<SERVER_IP>`（替换为你的服务器 IP）。
 
-注意：**HTTP 下 Service Worker、Web Push 和 PWA 安装都不会生效**，只能测试普通页面、登录和聊天。正式上线需要域名 + HTTPS。
+注意：Service Worker、Web Push 与 PWA 安装都要求**安全上下文**（HTTPS 或 localhost）。通过服务器 IP + HTTP 访问不算安全上下文，只能测试普通页面、登录和聊天。正式上线需要域名 + HTTPS（国内服务器通常还需完成备案）；临时验收可把站点通过 SSH 端口转发映射到 `http://localhost:<端口>` 再测。
 
 首次申请证书：
 
@@ -217,9 +228,106 @@ curl -N https://avatar.example.com/api/notifications/stream \
   -H "Authorization: Bearer <token>"
 ```
 
+## 8. 日常更新（发布新版本）
+
+推荐「本地构建 + 服务器原子切换」：服务器只运行产物，不安装 Node / Maven。
+
+### 8.1 发布前备份
+
+```bash
+# 保留上一版，便于回滚
+sudo cp /opt/avatar-agent/app.jar /opt/avatar-agent/app.jar.prev
+sudo cp -a /var/www/avatar-agent/dist /var/www/avatar-agent/dist.prev
+
+# 数据库逻辑备份
+set -a; . /etc/avatar-agent/env; set +a
+BACKUP_DIR=/var/backups/avatar-agent /opt/avatar-agent/scripts/backup-mysql.sh
+```
+
+### 8.2 本地构建
+
+```bash
+cd 虚拟形象spring/javaweb
+./mvnw clean package -DskipTests
+
+cd ../../../虚拟形象
+npm ci
+npm test
+npm run build
+```
+
+### 8.3 上传到 staging 目录
+
+```bash
+rsync -avz --delete \
+  虚拟形象/dist/ deploy@<服务器>:/var/www/avatar-agent/dist.new/
+
+scp 虚拟形象spring/javaweb/target/javaweb-0.0.1-SNAPSHOT.jar \
+  deploy@<服务器>:/opt/avatar-agent/app.jar.new
+```
+
+上传目录需对部署用户可写；如果不可写，先创建并 `chown` 给部署用户，或用受限制的 sudo 完成切换。
+
+### 8.4 原子切换并重启
+
+```bash
+ssh deploy@<服务器>
+sudo bash
+set -e
+
+mv /opt/avatar-agent/app.jar /opt/avatar-agent/app.jar.prev
+mv /opt/avatar-agent/app.jar.new /opt/avatar-agent/app.jar
+
+mv /var/www/avatar-agent/dist /var/www/avatar-agent/dist.prev
+mv /var/www/avatar-agent/dist.new /var/www/avatar-agent/dist
+
+systemctl restart avatar-agent
+```
+
+本次更新如果修改了 Nginx 配置（例如新增 manifest MIME），再执行：
+
+```bash
+nginx -t && systemctl reload nginx
+```
+
+### 8.5 验证
+
+```bash
+curl -I https://<域名>/
+curl -fsS https://<域名>/api/user/captcha
+curl -I https://<域名>/manifest.webmanifest
+curl -I https://<域名>/sw.js
+journalctl -u avatar-agent -n 100 --no-pager
+```
+
+浏览器端重点验证：登录、刷新页面后无感续期、退出登录、SSE 聊天、任务提醒。
+
+### 8.6 回滚
+
+```bash
+sudo bash
+set -e
+mv /opt/avatar-agent/app.jar.prev /opt/avatar-agent/app.jar
+rm -rf /var/www/avatar-agent/dist
+mv /var/www/avatar-agent/dist.prev /var/www/avatar-agent/dist
+systemctl restart avatar-agent
+```
+
+Flyway 迁移是前向的，不能单独回滚；只有数据被破坏时才使用数据库备份恢复。
+
+### 8.7 本次升级注意事项
+
+- **旧会话需要重登一次**：旧 Access Token 没有 Refresh Token。浏览器端默认 30 分钟、Electron 默认 1 小时，到期后无法续期。
+- **PWA 验收需要安全上下文**：必须 HTTPS 或 localhost；直接访问服务器 IP 不行，国内机器需先完成域名备案。
+- **Electron 必须重新打包**：`npm run electron:build`；API 地址在 `.env.desktop` 中烘入，域名未变则地址不用改。
+- **CORS**：同域部署不依赖 CORS；收紧为具体域名时必须同时允许 Electron 的 `null` Origin，否则桌面端全断。
+- **TTL 覆盖变量名**：`JWT_ACCESS_EXPIRATION_WEB`、`JWT_ACCESS_EXPIRATION_DESKTOP`、`JWT_REFRESH_EXPIRATION_WEB`、`JWT_REFRESH_EXPIRATION_DESKTOP`；默认值已够用，本次不需要添加。
+- **VAPID 不要更换**：已有推送订阅会全部失效；HTTPS 前保持 `WEBPUSH_ENABLED=false`。
+- **业务数据不受影响**：更新只替换 jar 与前端 dist，数据库中的账号、关系、任务数据保持不变。
+
 ## 关键点
 
-- Service Worker 和 Web Push 只在 HTTPS 下工作。
+- Service Worker 和 Web Push 只在安全上下文（HTTPS 或 localhost）下工作。
 - SSE 必须在 Nginx 中设置 `proxy_buffering off`，并加长读取超时。
 - `sw.js` 必须禁止缓存，否则用户会长期使用旧版本。
 - `/assets/` 下的文件名带 hash，可以放心长缓存。

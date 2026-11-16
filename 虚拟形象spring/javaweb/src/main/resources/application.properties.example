@@ -76,10 +76,11 @@ auth.reset.max-attempts=${RESET_MAX_ATTEMPTS:5}
 # JWT 配置（生产环境通过 JWT_SECRET 注入，不要在文件中写明文）
 jwt.secret=${JWT_SECRET}
 # 分环境 Token 策略（毫秒）：Electron 长会话，浏览器 / PWA 短会话
-jwt.access-expiration-desktop=${JWT_ACCESS_TTL_DESKTOP:3600000}
-jwt.access-expiration-web=${JWT_ACCESS_TTL_WEB:1800000}
-jwt.refresh-expiration-desktop=${JWT_REFRESH_TTL_DESKTOP:2592000000}
-jwt.refresh-expiration-web=${JWT_REFRESH_TTL_WEB:1209600000}
+# 默认值已够用：Web Access 30 分钟 / Refresh 14 天；Desktop Access 1 小时 / Refresh 30 天
+jwt.access-expiration-desktop=${JWT_ACCESS_EXPIRATION_DESKTOP:3600000}
+jwt.access-expiration-web=${JWT_ACCESS_EXPIRATION_WEB:1800000}
+jwt.refresh-expiration-desktop=${JWT_REFRESH_EXPIRATION_DESKTOP:2592000000}
+jwt.refresh-expiration-web=${JWT_REFRESH_EXPIRATION_WEB:1209600000}
 # 旧字段保留作为缺省回退
 jwt.expiration=3600000
 jwt.refresh-expiration=86400000
@@ -113,6 +114,7 @@ search.timeout-ms=${SEARCH_TIMEOUT_MS:8000}
 search.cache-ttl-seconds=${SEARCH_CACHE_TTL_SECONDS:300}
 
 # Web Push VAPID（密钥通过环境变量注入）
+# 上 HTTPS 前保持 WEBPUSH_ENABLED=false；VAPID 密钥不要更换，否则已有订阅全部失效
 webpush.enabled=${WEBPUSH_ENABLED:false}
 webpush.vapid.public-key=${WEB_PUSH_PUBLIC_KEY:}
 webpush.vapid.private-key=${WEB_PUSH_PRIVATE_KEY:}
