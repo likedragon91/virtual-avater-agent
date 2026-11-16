@@ -103,6 +103,7 @@ paths:
       description: |
         公开接口。使用 Refresh Token 换取新的 Access + Refresh（轮换）。
         已经轮换过的 Refresh Token 再次提交会被判定为重放，并撤销该用户全部会话。
+        失败时沿用统一业务错误格式：HTTP 200，响应体 `code=401`，客户端应按 code 判断。
       requestBody:
         required: true
         content:
@@ -113,13 +114,11 @@ paths:
               refreshToken: eyJhbGciOiJIUzI1NiJ9.rrr.zzz
       responses:
         '200':
-          description: 刷新成功
+          description: 刷新成功；失败时响应体 code 为 401
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResultLogin'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
   /user/register:
     post:
       tags: [账号]
