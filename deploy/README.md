@@ -317,6 +317,7 @@ Flyway 迁移是前向的，不能单独回滚；只有数据被破坏时才使�
 
 ### 8.7 本次升级注意事项
 
+- **发布顺序**：先更新后端 jar（`/api/user/refresh` 上线），再更新前端 dist 与 Electron 安装包；旧后端不会返回 `refreshToken`。
 - **旧会话需要重登一次**：旧 Access Token 没有 Refresh Token。浏览器端默认 30 分钟、Electron 默认 1 小时，到期后无法续期。
 - **PWA 验收需要安全上下文**：必须 HTTPS 或 localhost；直接访问服务器 IP 不行，国内机器需先完成域名备案。
 - **Electron 必须重新打包**：`npm run electron:build`；API 地址在 `.env.desktop` 中烘入。未上 HTTPS 时用 `http://<SERVER_IP>/api`，上域名后改用 `https://<域名>/api` 再重新打包。
