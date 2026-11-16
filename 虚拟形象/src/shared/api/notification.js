@@ -1,6 +1,6 @@
 import { API_BASE_URL } from './config'
 import { request, handleUnauthorized, AuthError } from './request'
-import { getToken, isTokenExpired } from '@/shared/utils/auth'
+import { getValidAccessToken } from '@/shared/utils/session'
 
 const API_BASE = `${API_BASE_URL}/notifications`
 
@@ -143,8 +143,9 @@ async function consumeStream(body, onEvent) {
  * 订阅通知 SSE。浏览器 EventSource 不能带 Authorization，使用 fetch + ReadableStream。
  */
 export async function streamNotifications({ signal, onEvent = () => {} }) {
-  const token = getToken()
-  if (token && isTokenExpired(token)) {
+  // 重连前确保 Access Token 可用（临期时静默刷新）
+  const token = await getValidAccessToken()
+  if (!token) {
     handleUnauthorized('登录已过期，请重新登录')
     throw new AuthError('登录已过期')
   }

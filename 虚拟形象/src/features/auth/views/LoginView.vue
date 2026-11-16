@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { login, getCaptcha } from '@/shared/api/user'
 import { sm3Encrypt } from '@/shared/utils/sm3'
+import { isElectronRuntime } from '@/shared/utils/auth'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { useAuthStore } from '@/shared/stores/auth'
 
@@ -92,18 +93,20 @@ async function handleLogin() {
       // 密码先做 SM3 摘要再传输，服务端用该摘要加盐再做一次 SM3 与库中哈希比对
       password: sm3Encrypt(form.password.trim()),
       captchaId: captchaId.value,
-      captchaCode: form.captcha
+      captchaCode: form.captcha,
+      // Electron 长会话（Access 1h / Refresh 30d），浏览器与 PWA 短会话（30min / 14d）
+      clientType: isElectronRuntime() ? 'DESKTOP' : 'WEB'
     })
 
     if (res && res.code === '200') {
-      const { token, userInfo, roleType } = res.data || {}
+      const { token, refreshToken, userInfo, roleType } = res.data || {}
       // 后端 userInfo.userType 已是数字（1-普通 2-管理员 3-VIP），直接保留；仅在缺失时用 roleType 兜底
       const storedUserInfo = {
         ...(userInfo || {}),
         userType: userInfo?.userType ?? (roleType === '管理员' ? 2 : 1)
       }
       // 统一保存登录态（token 同时被后端写入 Redis 白名单）
-      authStore.setSession(token, storedUserInfo)
+      authStore.setSession(token, storedUserInfo, refreshToken)
       ElMessage.success('登录成功')
 
       // 支持被 401 拦截后登录回跳原页面

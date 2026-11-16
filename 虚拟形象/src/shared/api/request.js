@@ -1,6 +1,11 @@
 import { ElMessage } from 'element-plus'
 import router from '@/app/router'
-import { getToken, clearAuth, isTokenExpired } from '@/shared/utils/auth'
+import { clearAuth } from '@/shared/utils/auth'
+import {
+  getValidAccessToken,
+  refreshAccessToken,
+  RefreshError
+} from '@/shared/utils/session'
 
 // 认证失效错误：调用方捕获后直接忽略即可（统一跳转已由 request 处理）
 export class AuthError extends Error {
@@ -34,10 +39,28 @@ export function handleUnauthorized(message) {
     })
 }
 
+async function send(url, rest, customHeaders, token) {
+  const headers = { ...(customHeaders || {}) }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(url, { ...rest, headers })
+  let data = null
+  try {
+    data = await response.json()
+  } catch {
+    data = null
+  }
+  return { response, data }
+}
+
 /**
- * 统一请求：自动携带 Authorization，解析 JSON，集中处理 401
- * 后端 JWT 白名单在 Redis 中，token 被撤销/过期时任意接口都会返回 401，
- * 这里统一清除本地登录态并回到登录页。
+ * 统一请求：
+ * - 自动携带 Authorization；
+ * - Access Token 临期时主动静默刷新；
+ * - 收到 401 时刷新一次并重放原请求；
+ * - 刷新失败才清理登录态并回到登录页。
  *
  * @param {string} url
  * @param {RequestInit & { auth?: boolean, skipAuthHandler?: boolean }} options
@@ -51,31 +74,40 @@ export async function request(url, options = {}) {
     ...rest
   } = options
 
-  const headers = { ...(customHeaders || {}) }
-
+  let token = ''
   if (auth) {
-    const token = getToken()
-    if (token) {
-      // 本地已过期：不必再请求后端
-      if (!skipAuthHandler && isTokenExpired(token)) {
-        handleUnauthorized('登录已过期，请重新登录')
-        throw new AuthError('登录已过期')
-      }
-      headers.Authorization = `Bearer ${token}`
+    token = await getValidAccessToken()
+    if (!token && !skipAuthHandler) {
+      handleUnauthorized('登录已过期，请重新登录')
+      throw new AuthError('登录已过期')
     }
   }
 
-  const response = await fetch(url, { ...rest, headers })
+  let { response, data } = await send(url, rest, customHeaders, token)
 
-  let data = null
-  try {
-    data = await response.json()
-  } catch {
-    data = null
+  const unauthorized =
+    response.status === 401 || (data && String(data.code) === '401')
+
+  // 401：尝试刷新并重放一次
+  if (unauthorized && auth && !skipAuthHandler) {
+    try {
+      token = await refreshAccessToken()
+      ;({ response, data } = await send(url, rest, customHeaders, token))
+    } catch (error) {
+      if (error instanceof RefreshError && error.authFailed) {
+        handleUnauthorized((data && data.msg) || error.message)
+        throw new AuthError((data && data.msg) || '登录已过期，请重新登录')
+      }
+      throw error
+    }
   }
 
-  // 未登录、token 过期或已被 Redis 白名单撤销
-  if (!skipAuthHandler && (response.status === 401 || (data && String(data.code) === '401'))) {
+  // 刷新后仍然 401，或未走刷新逻辑的 401：统一清理登录态
+  if (
+    auth &&
+    !skipAuthHandler &&
+    (response.status === 401 || (data && String(data.code) === '401'))
+  ) {
     handleUnauthorized(data && data.msg)
     throw new AuthError((data && data.msg) || '登录已过期，请重新登录')
   }

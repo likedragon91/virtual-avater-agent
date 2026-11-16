@@ -1,5 +1,6 @@
 import { request } from './request'
 import { API_BASE_URL } from './config'
+import { getRefreshToken } from '@/shared/utils/auth'
 
 /**
  * 获取图形验证码
@@ -16,9 +17,9 @@ export function getCaptcha() {
 
 /**
  * 登录接口
- * 登录成功后后端会生成带 jti 的 token 并写入 Redis 白名单
- * @param {{ username: string, password: string, captchaId: string, captchaCode: string }} data
- * @returns {Promise<{ code: string, msg: string, data: { token: string, roleType: string, userInfo: object } }>}
+ * 登录成功后后端签发 Access + Refresh Token，并把会话写入 Redis 白名单。
+ * @param {{ username: string, password: string, captchaId: string, captchaCode: string, clientType?: 'DESKTOP'|'WEB' }} data
+ * @returns {Promise<{ code: string, msg: string, data: { token: string, refreshToken: string, expiresIn: number, clientType: string, roleType: string, userInfo: object } }>}
  */
 export function login(data) {
   return request(`${API_BASE_URL}/user/login`, {
@@ -140,13 +141,16 @@ export function resetPassword(data) {
 
 /**
  * 退出登录
- * 后端会删除 Redis 白名单中的 jti 并移除在线会话，token 立即失效；
+ * 后端会撤销整段会话（Access + Refresh）并移除在线会话；
  * 即使请求失败，调用方也应清除本地登录态。
  * @returns {Promise<{ code: string, msg: string }>}
  */
 export function logout() {
+  const refreshToken = getRefreshToken()
   return request(`${API_BASE_URL}/user/logout`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: refreshToken || '' }),
     // token 已失效时不再触发全局跳转，由调用方统一清理本地状态
     skipAuthHandler: true
   })

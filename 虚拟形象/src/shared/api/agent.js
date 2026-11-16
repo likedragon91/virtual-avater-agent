@@ -1,6 +1,6 @@
 import { API_BASE_URL } from './config'
 import { request, handleUnauthorized, AuthError } from './request'
-import { getToken, isTokenExpired } from '@/shared/utils/auth'
+import { getValidAccessToken } from '@/shared/utils/session'
 
 const AGENT_BASE = `${API_BASE_URL}/agent`
 
@@ -211,8 +211,9 @@ export async function streamMessage({
   signal,
   onEvent = () => {}
 }) {
-  const token = getToken()
-  if (token && isTokenExpired(token)) {
+  // 临期时先静默刷新，避免长时间挂机后重连失败
+  const token = await getValidAccessToken()
+  if (!token) {
     handleUnauthorized('登录已过期，请重新登录')
     throw new AuthError('登录已过期')
   }

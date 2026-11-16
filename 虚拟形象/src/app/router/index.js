@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getToken, getUserInfo, clearAuth, isTokenExpired } from '@/shared/utils/auth'
+import { getToken, getUserInfo, getRefreshToken, clearAuth, isTokenExpired } from '@/shared/utils/auth'
 
 const routes = [
   {
@@ -82,8 +82,12 @@ const routes = [
   { path: '/:pathMatch(.*)*', redirect: '/chat' }
 ]
 
+// Electron 生产环境通过 file:// 加载，必须使用 Hash 路由；Web / PWA 保持 History 路由
 const router = createRouter({
-  history: createWebHistory(),
+  history:
+    typeof window !== 'undefined' && window.location.protocol === 'file:'
+      ? createWebHashHistory()
+      : createWebHistory(),
   routes
 })
 
@@ -92,12 +96,14 @@ router.beforeEach((to) => {
   document.title = to.meta.title ? `${to.meta.title} · 虚拟形象` : '虚拟形象'
 
   const token = getToken()
+  const refreshToken = getRefreshToken()
   const isPublic = Boolean(to.meta.public)
 
-  // 1. 未登录或 token 已过期：只允许访问登录/注册页
-  //    token 是否被服务端撤销由接口返回 401 时统一处理
-  if (!token || isTokenExpired(token)) {
-    if (token) clearAuth()
+  // 1. 没有任何可用会话：只允许访问登录/注册页。
+  //    Access 过期但仍有 Refresh 时视为已登录，由 request 层静默续期。
+  const hasSession = (Boolean(token) && !isTokenExpired(token)) || Boolean(refreshToken)
+  if (!hasSession) {
+    if (token || refreshToken) clearAuth()
     if (isPublic) return true
     const query = to.path !== '/chat' ? { redirect: to.fullPath } : undefined
     return { path: '/login', query }
