@@ -260,6 +260,122 @@ paths:
                 $ref: '#/components/schemas/ResultVoid'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /user/profile:
+    put:
+      tags: [账号]
+      summary: 编辑当前用户资料
+      operationId: updateUserProfile
+      description: |
+        当前登录用户编辑自己的资料。
+        只允许修改昵称、头像、手机号、性别、生日；账号、邮箱、用户类型、状态不可自行修改。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+            example:
+              nickname: 小测
+              avatar: /files/bussiness/user_avatar/avatar.jpg
+              phone: "13800138000"
+              gender: 1
+              birthday: "2000-01-01"
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultUserDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /user/{id}/status:
+    patch:
+      tags: [账号]
+      summary: 修改用户状态（管理员）
+      operationId: updateUserStatus
+      description: |
+        管理员将用户状态改为正常（1）或禁用（0）。
+        不能禁用当前登录账号，也不能禁用最后一个可用管理员。
+        禁用后该用户现有 token 会被撤销。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 目标用户 id
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusRequest'
+            example:
+              status: 0
+      responses:
+        '200':
+          description: 修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultUserDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /user/password/forgot:
+    post:
+      tags: [账号]
+      summary: 发送找回密码验证码
+      operationId: forgotPassword
+      security: []
+      description: |
+        公开接口。向注册邮箱发送 6 位验证码，10 分钟有效。
+        无论邮箱是否存在都返回成功，避免枚举账号；同一邮箱 60 秒内只能发送一次。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+            example:
+              email: test@example.com
+      responses:
+        '200':
+          description: 请求已受理（不代表邮箱一定存在）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+  /user/password/reset:
+    post:
+      tags: [账号]
+      summary: 使用邮箱验证码重置密码
+      operationId: resetPassword
+      security: []
+      description: |
+        公开接口。newPassword 与 confirmPassword 均为前端 SM3 后的 64 位十六进制摘要。
+        验证码最多尝试 5 次，重置成功后该用户全部 token 失效。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+            example:
+              email: test@example.com
+              code: "123456"
+              newPassword: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+              confirmPassword: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      responses:
+        '200':
+          description: 重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
   /agent/sessions:
     post:
       tags: [Agent 会话]
@@ -1229,6 +1345,71 @@ components:
           type: integer
           description: 公开注册固定为 1（普通用户），该字段不再生效
           example: 1
+    UpdateProfileRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          maxLength: 50
+          example: 小测
+        avatar:
+          type: string
+          maxLength: 255
+          description: 图片 URL 或以 / 开头的站内路径
+          example: /files/bussiness/user_avatar/avatar.jpg
+        phone:
+          type: string
+          pattern: '^$|^1[3456789]\d{9}$'
+          example: "13800138000"
+        gender:
+          type: integer
+          description: 0-未知，1-男，2-女
+          enum: [0, 1, 2]
+          example: 1
+        birthday:
+          type: string
+          pattern: '^$|^\d{4}-\d{2}-\d{2}$'
+          example: "2000-01-01"
+    UpdateUserStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: integer
+          description: 0-禁用，1-正常
+          enum: [0, 1]
+          example: 0
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 50
+          example: test@example.com
+    ResetPasswordRequest:
+      type: object
+      required: [email, code, newPassword, confirmPassword]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 50
+          example: test@example.com
+        code:
+          type: string
+          pattern: '^\d{6}$'
+          example: "123456"
+        newPassword:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+          description: 前端 SM3 后的 64 位十六进制摘要
+          example: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        confirmPassword:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+          example: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     LoginData:
       type: object
       properties:
