@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | Windows 桌面浏览器 | 现有桌面布局，宽屏三栏 / 双栏 | 已支持 |
 | 手机浏览器 | 同一份代码在 ≤900px 断点降级为单列布局 + 抽屉导航 | 已支持 |
+| Electron 悬浮球 | 透明置顶悬浮球 + 展开桌面窗口 + Windows 原生通知 | 已支持 |
 | PWA | manifest、独立窗口与 Web Push | 规划中 |
-| Electron 悬浮球 | 透明置顶悬浮球 + 展开桌面窗口 + Windows 原生通知 | 规划中 |
 
 核心原则：桌面版和手机版不是两个项目，而是同一套源码在不同断点下的两种布局。
 
@@ -114,6 +114,16 @@ npm run dev
 
 前端默认 `http://localhost:5173`，`/api` 由 Vite 代理到 `http://localhost:1107`。
 
+### 启动 Electron 桌面壳
+
+```bash
+cd 虚拟形象
+npm run electron:dev     # 开发：加载 5173
+npm run electron:build   # 打包：release/虚拟形象 Setup <version>.exe
+```
+
+生产构建前需复制 `.env.desktop.example` 为 `.env.desktop` 并填写后端绝对地址。详见 [`docs/desktop.md`](docs/desktop.md)。
+
 ### 环境变量（后端）
 
 | 变量 | 必填 | 说明 |
@@ -149,6 +159,7 @@ CI 会在 push / PR 时执行后端测试与前端构建。
 ## 文档
 
 - 架构与数据流：[`docs/architecture.md`](docs/architecture.md)
+- Electron 桌面壳：[`docs/desktop.md`](docs/desktop.md)
 - 接口契约：[`虚拟形象spring/javaweb/docs/openapi/javaweb-api.yaml`](虚拟形象spring/javaweb/docs/openapi/javaweb-api.yaml)
 - 部署手册：[`deploy/README.md`](deploy/README.md)
 - 产品需求：[`虚拟形象spring/javaweb/需求文档.md`](虚拟形象spring/javaweb/需求文档.md)
@@ -156,6 +167,6 @@ CI 会在 push / PR 时执行后端测试与前端构建。
 ## Roadmap
 
 1. **P0**：仓库可复现 + 全局响应式改造（已完成）。
-2. **P1**：Refresh Token 分环境策略、Electron 悬浮球与 Windows 原生通知。
+2. **P1**：Refresh Token 分环境策略、Electron 悬浮球与 Windows 原生通知（已完成）。
 3. **P2**：PWA 可安装、移动端 Web Push 真机验证、前端测试与技术文档完善。
 4. **后续**：衣橱与记忆簿功能、Docker Compose 部署、i18n。

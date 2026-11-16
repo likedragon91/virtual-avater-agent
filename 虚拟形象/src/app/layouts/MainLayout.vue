@@ -6,6 +6,7 @@ import { UserFilled, SwitchButton, ChatDotRound, Calendar, Setting, User, Monito
 import { getUserMessage } from '@/shared/api/user'
 import { ASSET_BASE_URL } from '@/shared/api/config'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
+import { isDesktopApp, notifySystem, onSystemNotificationClick } from '@/shared/utils/desktop-notify'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useNotificationStore } from '@/shared/stores/notification'
 
@@ -109,10 +110,21 @@ async function logout() {
   router.replace('/login')
 }
 
+// 主窗口聚焦时用站内弹窗；隐藏到悬浮球或失焦时走 Windows 原生通知
+function windowIsActive() {
+  return document.visibilityState === 'visible' && document.hasFocus()
+}
+
+let stopSystemNotificationClick = () => {}
+
 onMounted(async () => {
   await loadCurrentUser()
   await notificationStore.loadUnread()
   notificationStore.startStream((notification) => {
+    if (isDesktopApp() && !windowIsActive()) {
+      notifySystem(notification)
+      return
+    }
     ElNotification({
       title: notification.title,
       message: notification.body,
@@ -124,9 +136,17 @@ onMounted(async () => {
       }
     })
   })
+
+  // 点击系统通知后：主进程展开窗口并回传通知信息
+  stopSystemNotificationClick = onSystemNotificationClick((payload) => {
+    if (!payload) return
+    if (payload.id) notificationStore.markRead(payload.id)
+    if (payload.type === 'TASK_REMINDER') router.push('/task')
+  })
 })
 
 onBeforeUnmount(() => {
+  stopSystemNotificationClick()
   notificationStore.stopStream()
 })
 </script>

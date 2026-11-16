@@ -13,3 +13,15 @@ export const API_BASE_URL = trimTrailingSlash(import.meta.env.VITE_API_BASE_URL 
 
 // 头像等静态资源地址；同域部署留空即可
 export const ASSET_BASE_URL = trimTrailingSlash(import.meta.env.VITE_ASSET_BASE_URL || '')
+
+// Electron 生产环境通过 file:// 加载，相对路径 /api 无法解析到后端
+if (
+  typeof window !== 'undefined' &&
+  window.location.protocol === 'file:' &&
+  !/^https?:\/\//i.test(API_BASE_URL)
+) {
+  console.error(
+    '[desktop] VITE_API_BASE_URL 必须是绝对地址（如 https://avatar.example.com/api），' +
+      '请检查 .env.desktop 后重新执行 npm run build:desktop'
+  )
+}

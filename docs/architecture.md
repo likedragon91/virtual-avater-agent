@@ -10,10 +10,10 @@
 | --- | --- | --- | --- | --- |
 | Windows 桌面浏览器 | Nginx 静态站点 | 宽屏 | 桌面三栏 / 双栏 | 已实现 |
 | 手机浏览器 | 同一站点 | 窄屏 | ≤900px 单列 + 抽屉导航 | 已实现 |
+| Electron 悬浮球 | 本地 `dist-electron/` | 可调窗口 | 桌面布局（minWidth 900） | 已实现 |
 | PWA | 同一站点 + manifest | 窄屏 | 同手机浏览器 | 规划中 |
-| Electron 悬浮球 | 本地 `dist-electron/` | 可调窗口 | 桌面布局（minWidth 900） | 规划中 |
 
-构建矩阵（规划中）：
+构建矩阵：
 
 ```text
 npm run build          -> dist/           base "/"     history 路由  同源 /api
@@ -73,7 +73,7 @@ sequenceDiagram
   S-->>C: 业务响应
 ```
 
-规划中的 Refresh Token 流程：
+Refresh Token 流程（已实现，含轮换与重放撤销）：
 
 ```mermaid
 sequenceDiagram

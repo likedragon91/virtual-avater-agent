@@ -17,12 +17,18 @@
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm run build      # 产出 dist/
+npm run dev            # http://localhost:5173
+npm run build          # Web / PWA：dist/
 npm run preview
+
+# Electron
+npm run electron:dev   # 开发：加载 5173
+npm run build:desktop  # 桌面构建：dist-electron/
+npm run electron:build # 打包 NSIS：release/虚拟形象 Setup <version>.exe
 ```
 
 后端默认地址 `http://localhost:1107`，开发环境由 Vite 代理 `/api` 与 `/files`。
+Electron 生产构建需要 `.env.desktop`（从 `.env.desktop.example` 复制）并填写后端绝对地址，详见仓库根目录 `docs/desktop.md`。
 
 ### 环境变量
 
@@ -32,6 +38,8 @@ npm run preview
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `/api` | 后端 API 基础路径；同域部署保持默认 |
 | `VITE_ASSET_BASE_URL` | 空 | 头像等静态资源域名；同域留空 |
+
+Electron 生产构建使用 `.env.desktop`，其中 `VITE_API_BASE_URL` **必须是绝对地址**（如 `https://avatar.example.com/api`），因为 `file://` 无法解析 `/api`。
 
 ## 响应式约定
 
@@ -95,8 +103,16 @@ src/
 - 当前使用 Pixi `Graphics` 程序化绘制占位角色；美术资源就绪后按槽位替换为 Sprite 即可。
 - 点击角色会触发眨眼与开心表情，用于验证动画状态机。
 
+## Electron 桌面壳
+
+- 生产环境启动为 72×72 透明置顶悬浮球；主窗口隐藏预加载，保持通知 SSE 在线。
+- 点击球心展开 1200×800 主窗口，关闭主窗口回到悬浮球；右键悬浮球可展开或退出。
+- 隐藏/失焦时任务提醒走 Windows 原生通知，点击通知展开窗口并进入任务页。
+- `contextIsolation + sandbox`，Refresh Token 由主进程 `safeStorage` 加密存储。
+- 构建与排错见仓库根目录 [`docs/desktop.md`](../docs/desktop.md)。
+
 ## Roadmap
 
-- **P1**：分环境 Refresh Token 静默续期、Electron 悬浮球壳与原生通知。
+- **P1**：分环境 Refresh Token 静默续期、Electron 悬浮球壳与原生通知（已完成）。
 - **P2**：PWA（manifest / 图标 / Service Worker 缓存）、移动端 Web Push 真机验证。
 - **后续**：衣橱与记忆簿、i18n、前端单元测试覆盖扩展。

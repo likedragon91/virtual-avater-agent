@@ -1,0 +1,31 @@
+appId: com.example.avataragent
+productName: 虚拟形象
+copyright: Copyright © 2026 avatar-agent
+
+directories:
+  output: release
+
+# 使用 npm 已安装的 Electron，避免打包时重复下载（国内网络更稳定）
+electronDist: node_modules/electron/dist
+
+files:
+  - package.json
+  - electron/**/*
+  - dist-electron/**/*
+
+asar: true
+
+win:
+  icon: electron/assets/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 虚拟形象
