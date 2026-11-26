@@ -3,7 +3,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/shared/stores/auth'
-import { updateProfile } from '@/shared/api/user'
+import { useVoiceStore } from '@/shared/stores/voice'
+import { updateProfile, uploadAvatar } from '@/shared/api/user'
+import { ASSET_BASE_URL } from '@/shared/api/config'
+import { APP_VERSION, resolveCurrentVersion } from '@/shared/utils/appVersion'
 import { getCurrentPersona, getPersonaOptions, updatePersona } from '@/shared/api/persona'
 import {
   getNotificationSettings,
@@ -23,7 +26,41 @@ import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const voiceStore = useVoiceStore()
+const appVersion = ref(APP_VERSION)
 const { matches: isMobile } = useMediaQuery('(max-width: 900px)')
+
+const voiceEnabled = computed({
+  get: () => voiceStore.enabled,
+  set: (value) => {
+    if (value) {
+      void voiceStore.enableFromGesture()
+    } else {
+      voiceStore.setEnabled(false)
+    }
+  }
+})
+const voiceSpeaker = computed({
+  get: () => voiceStore.speaker,
+  set: (value) => voiceStore.setSpeaker(value)
+})
+const voiceVolume = computed({
+  get: () => Math.round(voiceStore.volume * 100),
+  set: (value) => voiceStore.setVolume(Number(value) / 100)
+})
+const voicePreviewing = ref(false)
+
+async function handleVoicePreview() {
+  voicePreviewing.value = true
+  try {
+    await voiceStore.preview()
+    ElMessage.success('试听已播放')
+  } catch (error) {
+    ElMessage.warning(error?.message || '试听失败')
+  } finally {
+    voicePreviewing.value = false
+  }
+}
 
 const userTypeText = computed(() => {
   const map = { 1: '普通用户', 2: '管理员', 3: 'VIP' }
@@ -251,6 +288,49 @@ async function handleTestPush() {
   }
 }
 
+const aiAvatarInput = ref(null)
+const userAvatarInput = ref(null)
+const avatarUploading = ref('')
+
+function assetUrl(path) {
+  if (!path) return ''
+  return /^https?:\/\//.test(path) ? path : `${ASSET_BASE_URL}${path}`
+}
+
+const aiAvatarUrl = computed(() => assetUrl(authStore.userInfo.aiAvatar))
+const userAvatarUrl = computed(() => assetUrl(authStore.userInfo.avatar))
+
+async function handleAvatarFile(event, target) {
+  const file = event.target?.files?.[0]
+  if (event.target) event.target.value = ''
+  if (!file) return
+  if (!/^image\//.test(file.type)) {
+    ElMessage.warning('请选择图片文件')
+    return
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.warning('头像不能超过 20MB')
+    return
+  }
+
+  avatarUploading.value = target
+  try {
+    const res = await uploadAvatar(file, target)
+    if (!res || String(res.code) !== '200') {
+      throw new Error((res && res.msg) || '上传头像失败')
+    }
+    authStore.updateUserInfo(res.data || {})
+    if (target === 'user' && res.data?.avatar) {
+      profileForm.avatar = res.data.avatar
+    }
+    ElMessage.success(target === 'ai' ? 'AI 头像已更新' : '用户头像已更新')
+  } catch (error) {
+    ElMessage.error(error?.message || '上传头像失败')
+  } finally {
+    avatarUploading.value = ''
+  }
+}
+
 const profileDialogVisible = ref(false)
 const profileSaving = ref(false)
 const profileFormRef = ref(null)
@@ -311,7 +391,8 @@ async function saveProfile() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadPersona(), loadNotificationSettings()])
+  await Promise.all([loadPersona(), loadNotificationSettings(), voiceStore.loadConfig(true)])
+  appVersion.value = await resolveCurrentVersion()
 })
 
 async function handleLogout() {
@@ -373,6 +454,65 @@ async function handleLogout() {
           {{ genderText }}
         </el-descriptions-item>
       </el-descriptions>
+    </el-card>
+
+    <el-card shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span class="card-title">头像</span>
+          <span class="card-sub">PNG / JPEG / WebP / GIF，单文件不超过 20MB</span>
+        </div>
+      </template>
+
+      <div class="avatar-row">
+        <div class="avatar-field">
+          <el-avatar :size="56" :src="aiAvatarUrl || undefined">
+            <span v-if="!aiAvatarUrl">角</span>
+          </el-avatar>
+          <div class="avatar-field-main">
+            <span class="avatar-label">AI 头像</span>
+            <span class="avatar-hint">聊天消息里角色使用的头像</span>
+            <el-button
+              size="small"
+              :loading="avatarUploading === 'ai'"
+              @click="aiAvatarInput?.click()"
+            >
+              上传 AI 头像
+            </el-button>
+            <input
+              ref="aiAvatarInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              hidden
+              @change="handleAvatarFile($event, 'ai')"
+            />
+          </div>
+        </div>
+
+        <div class="avatar-field">
+          <el-avatar :size="56" :src="userAvatarUrl || undefined">
+            <span v-if="!userAvatarUrl">{{ authStore.displayName.slice(0, 1) }}</span>
+          </el-avatar>
+          <div class="avatar-field-main">
+            <span class="avatar-label">用户头像</span>
+            <span class="avatar-hint">聊天消息与顶栏使用的头像</span>
+            <el-button
+              size="small"
+              :loading="avatarUploading === 'user'"
+              @click="userAvatarInput?.click()"
+            >
+              上传用户头像
+            </el-button>
+            <input
+              ref="userAvatarInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              hidden
+              @change="handleAvatarFile($event, 'user')"
+            />
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <el-card shadow="never">
@@ -502,9 +642,79 @@ async function handleLogout() {
 
     <el-card shadow="never">
       <template #header>
-        <span class="card-title">更多设置</span>
+        <div class="card-header">
+          <span class="card-title">语音</span>
+          <span class="card-sub">角色朗读回复；音量调到 0 时口型仍会动</span>
+        </div>
       </template>
-      <el-empty description="音色、模型、隐私与数据管理将在后续接入" />
+
+      <el-form label-width="88px" class="voice-form">
+        <el-form-item label="语音朗读">
+          <el-switch v-model="voiceEnabled" :disabled="!voiceStore.available" />
+          <span v-if="!voiceStore.available" class="voice-hint">
+            {{ voiceStore.loadError || '服务器未开放语音合成' }}
+          </span>
+          <span v-else-if="!voiceStore.configured" class="voice-hint">
+            未配置密钥：入口已开放，试听和朗读会返回 TTS_NOT_CONFIGURED
+          </span>
+        </el-form-item>
+
+        <el-form-item label="音色">
+          <el-select
+            v-model="voiceSpeaker"
+            :disabled="!voiceStore.available"
+            placeholder="默认音色"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="voice in voiceStore.voices"
+              :key="voice.id"
+              :value="voice.id"
+              :label="voice.name || voice.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="音量">
+          <el-slider
+            v-model="voiceVolume"
+            :min="0"
+            :max="100"
+            :disabled="!voiceStore.available"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item>
+          <div class="voice-actions">
+            <el-button
+              :loading="voicePreviewing"
+              :disabled="!voiceStore.available"
+              @click="handleVoicePreview"
+            >
+              试听
+            </el-button>
+            <span v-if="voiceStore.quotaText" class="voice-hint">
+              {{ voiceStore.quotaText }}
+            </span>
+          </div>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span class="card-title">应用更新</span>
+          <span class="card-sub">当前版本 {{ appVersion }}</span>
+        </div>
+      </template>
+      <p class="profile-note">
+        桌面端可检查并下载最新安装包；网页端会随服务器自动更新。
+      </p>
+      <el-button type="primary" plain @click="router.push('/update')">
+        检查更新
+      </el-button>
     </el-card>
 
     <el-card shadow="never">
@@ -583,6 +793,53 @@ async function handleLogout() {
 
 .card-title {
   font-weight: 600;
+}
+
+.voice-form {
+  max-width: 640px;
+}
+
+.avatar-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.avatar-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+}
+
+.avatar-field-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.avatar-label {
+  font-weight: 600;
+}
+
+.avatar-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.voice-hint {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.voice-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .profile-note {

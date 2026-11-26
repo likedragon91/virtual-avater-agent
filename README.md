@@ -23,8 +23,15 @@
 - **通知**：站内通知 SSE、通知设置与免打扰、Web Push（VAPID）。
 - **管理端**：用户分页查询、启用/禁用、在线会话列表。
 - **像素舞台**：256×256 逻辑分辨率、最近邻采样、槽位分层、情绪映射与待机动画。
+- **形象运行时**：Pose 参数 + pre/post/final 动作插件链（呼吸、眨眼、视线、口型、触摸反应）；LLM 通过 `<act/>` 标签驱动情绪、点头/摇头/歪头/弹跳等动作。
+- **语音朗读**：火山引擎豆包 TTS（HTTP Chunked 单向流式），按句合成与排队播放；中文韵母 viseme + 音频包络驱动口型，静音时口型仍会动。可在设置页选音色、调音量、试听。
+- **衣橱**：内置像素预设与配色（头发/上衣/下装/鞋子/肤色/背景），实时预览、跨设备保存。
+- **Live2D 形象**：衣橱支持导入 Cubism 3/4/5 模型 zip（≤20MB），聊天页按形象配置切换到 Live2D 舞台；TTS 音频同时驱动 Live2D 口型。Cubism Core 需按 `public/live2d/README.md` 自行放置（专有运行时，不提交仓库）。
+- **静态立绘**：没有 Live2D 模型时，可上传单张 PNG/JPEG/WebP/GIF（≤20MB）作为 `driver=image` 的舞台形象，带轻微呼吸动画；不支持骨骼、表情和口型。
+- **AI / 用户头像**：设置页通过 `multipart/form-data` 上传，图片 ≤20MB；AI 头像用于聊天消息中的角色，用户头像用于顶栏与消息。
+- **应用更新**：管理员在「管理 → 应用更新」上传 Windows 安装包并发布（≤300MB），系统向所有启用用户推送 `APP_UPDATE` 通知；用户在左侧栏底部「检查更新」或设置页查看并下载。网页端随服务器自动更新，桌面端需安装新包。
 - **PWA**：manifest、独立窗口、应用壳缓存；Web Push 需 HTTPS，iOS 需 16.4+ 并添加到主屏幕。
-- **规划中**：衣橱、记忆簿（路由保留，暂未在主导航展示）。
+- **规划中**：记忆簿、用户自定义像素模型包导入。
 
 ## 技术栈
 
@@ -36,7 +43,8 @@
 | 构建 | Vite 5，Pixi 单独拆 chunk |
 | 状态 | Pinia 3 |
 | UI | Element Plus 2.x |
-| 2D 渲染 | PixiJS 8 |
+| 2D 渲染 | PixiJS 8（像素舞台）、live2d-renderer（Cubism 5 WebGL2 舞台） |
+| 语音 | Web Audio（播放/包络/口型）、pinyin-pro（中文韵母） |
 | 请求 | 原生 fetch 封装（统一 401 处理、SSE 解析） |
 
 ### 后端（`虚拟形象spring/javaweb/`）
@@ -49,7 +57,7 @@
 | 缓存 | Redis（JWT 白名单、验证码、在线会话、搜索缓存） |
 | 鉴权 | JWT + Spring Security |
 | 实时通信 | SSE（对话流、通知流） |
-| 外部服务 | DeepSeek、博查搜索、SMTP、Web Push |
+| 外部服务 | DeepSeek、博查搜索、SMTP、Web Push、火山引擎豆包语音 |
 
 ## 目录结构
 
@@ -141,6 +149,13 @@ npm run electron:build   # 打包：release/虚拟形象 Setup <version>.exe
 | `BOCHA_API_KEY` | 联网搜索 | 博查搜索密钥 |
 | `MAIL_HOST` / `MAIL_USERNAME` / `MAIL_PASSWORD` | 找回密码 | SMTP 配置 |
 | `WEB_PUSH_PUBLIC_KEY` / `WEB_PUSH_PRIVATE_KEY` | Web Push | VAPID 密钥 |
+| `TTS_ENABLED` | 语音朗读 | 默认 `false`；配置密钥并试听通过后改为 `true` |
+| `VOLC_TTS_API_KEY` | 语音朗读 | 火山引擎新版控制台 API Key |
+| `VOLC_TTS_RESOURCE_ID` | 语音朗读 | 与音色匹配，默认 `seed-tts-2.0` |
+| `VOLC_TTS_SPEAKER` | 语音朗读 | 默认音色 ID，需与控制台一致 |
+| `PERFORMANCE_ENABLED` | 表演标签 | 默认 `true`；关闭后退化为纯文本 SSE |
+| `UPLOAD_DIR` | 头像/Live2D | 上传根目录，默认 `./uploads`；需可写并纳入备份 |
+| `SPRING_SERVLET_MULTIPART_*` | 上传 | 已在配置中设为 20MB；也可用 `application.properties` 覆盖 |
 
 ## 测试与构建
 
@@ -168,7 +183,9 @@ CI 会在 push / PR 时执行后端测试与前端构建。
 - 架构与数据流：[`docs/architecture.md`](docs/architecture.md)
 - Electron 桌面壳：[`docs/desktop.md`](docs/desktop.md)
 - 接口契约：[`虚拟形象spring/javaweb/docs/openapi/javaweb-api.yaml`](虚拟形象spring/javaweb/docs/openapi/javaweb-api.yaml)
+- Live2D Core 说明：[`虚拟形象/public/live2d/README.md`](虚拟形象/public/live2d/README.md)
 - 部署手册：[`deploy/README.md`](deploy/README.md)
+- 华为云赛题改造计划：[`docs/华为云赛题改造计划.md`](docs/华为云赛题改造计划.md)
 - 产品需求：[`虚拟形象spring/javaweb/需求文档.md`](虚拟形象spring/javaweb/需求文档.md)
 
 ## Roadmap

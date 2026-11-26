@@ -37,4 +37,20 @@ public class AgentAsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 摘要与向量补算使用独立线程池，避免挤占聊天任务。
+     */
+    @Bean(name = "summaryExecutor")
+    public Executor summaryExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("agent-summary-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
 }

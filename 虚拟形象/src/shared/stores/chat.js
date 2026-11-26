@@ -1,6 +1,10 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { useAvatarStore } from '@/shared/stores/avatar'
+import { useVoiceStore } from '@/shared/stores/voice'
+import { useUiStore } from '@/shared/stores/ui'
+import { enqueueSentence, stopSpeech } from '@/features/voice/speechQueue'
 import {
   createClientMessageId,
   createSession as createSessionApi,
@@ -26,12 +30,24 @@ function isAbortError(error) {
   return Boolean(error && (error.name === 'AbortError' || error.code === 20))
 }
 
+function parseEmotionPayload(raw) {
+  if (!raw) return null
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return typeof parsed?.emotion === 'string' ? parsed.emotion : null
+  } catch {
+    return null
+  }
+}
+
 function toUiMessage(dto) {
   const message = {
     ...dto,
+    emotion: parseEmotionPayload(dto.emotion),
     clientKey: `srv-${dto.id}`,
     streaming: false,
     tools: [],
+    speechSegments: [],
     error: ''
   }
   // 中断/失败时后端可能只存了空内容，补一句可读占位，避免空气泡
@@ -51,6 +67,9 @@ function toUiMessage(dto) {
  * - runId 即 assistant 消息 id，用于后端中断接口。
  */
 export const useChatStore = defineStore('chat', () => {
+  const avatarStore = useAvatarStore()
+  const voiceStore = useVoiceStore()
+  const uiStore = useUiStore()
   const ownerKey = ref('')
   const sessions = ref([])
   const sessionsTotal = ref(0)
@@ -60,6 +79,64 @@ export const useChatStore = defineStore('chat', () => {
   const currentSessionId = ref(null)
   const messages = ref([])
   const messagesLoading = ref(false)
+  // 输入草稿放在 store 里，面板与聊天页切换时不会丢失
+  const draft = ref('')
+
+  function setDraft(value) {
+    draft.value = String(value ?? '')
+  }
+
+  // 左侧面板只负责输入；角色上方只显示最新一条助手回复气泡
+  const REPLY_TEXT_LIMIT = 2000
+  let replySyncTimer = null
+
+  function latestAssistantMessage() {
+    for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+      const message = messages.value[index]
+      if (message.senderRole === 'assistant') return message
+    }
+    return null
+  }
+
+  function syncReplyBubble() {
+    if (replySyncTimer) {
+      clearTimeout(replySyncTimer)
+      replySyncTimer = null
+    }
+    if (!uiStore.panelMode) return
+    const message = latestAssistantMessage()
+    window.desktopBridge?.sendChatReply?.({
+      text: message ? String(message.content || '').slice(0, REPLY_TEXT_LIMIT) : '',
+      pending: Boolean(message && message.streaming),
+      error: message ? String(message.error || '') : '',
+      status: message ? Number(message.status) || 0 : 0
+    })
+  }
+
+  function scheduleReplySync() {
+    if (!uiStore.panelMode) return
+    if (replySyncTimer) clearTimeout(replySyncTimer)
+    replySyncTimer = setTimeout(syncReplyBubble, 150)
+  }
+
+  // 只关心最新助手消息；msg 变成响应式代理后，delta 也会触发这里
+  watch(
+    () => {
+      const message = latestAssistantMessage()
+      if (!message) return 'none'
+      const contentLength = String(message.content || '').length
+      return `${message.clientKey}:${contentLength}:${message.streaming ? 1 : 0}:${message.status}:${message.error || ''}`
+    },
+    () => scheduleReplySync()
+  )
+
+  watch(
+    () => uiStore.panelMode,
+    (value) => {
+      if (value) syncReplyBubble()
+      else window.desktopBridge?.hideReplyBubble?.()
+    }
+  )
   const loadingMore = ref(false)
   const nextCursor = ref(null)
   const hasMore = ref(false)
@@ -82,6 +159,7 @@ export const useChatStore = defineStore('chat', () => {
   function reset() {
     streamSeq++
     messageSeq++
+    stopSpeech()
     if (abortController) {
       try {
         abortController.abort()
@@ -104,6 +182,12 @@ export const useChatStore = defineStore('chat', () => {
     streaming.value = false
     runId.value = null
     streamError.value = ''
+    draft.value = ''
+    if (replySyncTimer) {
+      clearTimeout(replySyncTimer)
+      replySyncTimer = null
+    }
+    avatarStore.reset()
   }
 
   /**
@@ -184,8 +268,9 @@ export const useChatStore = defineStore('chat', () => {
     }
     if (sessionId === currentSessionId.value && messages.value.length) return
 
-    // 切换会话前停止当前生成，避免后台继续消耗 token
+    // 切换会话前停止当前生成/朗读，避免旧会话的声音串到新会话
     if (streaming.value) stopStreaming()
+    stopSpeech()
 
     currentSessionId.value = sessionId
     messages.value = []
@@ -203,9 +288,15 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const data = await listMessages(sessionId, { size: 30 })
       if (seq !== messageSeq || sessionId !== currentSessionId.value) return
-      messages.value = ((data && data.records) || []).map(toUiMessage)
+      const list = ((data && data.records) || []).map(toUiMessage)
+      messages.value = list
       nextCursor.value = (data && data.nextCursor) || null
       hasMore.value = Boolean(data && data.hasMore)
+      // 恢复最近一次助手情绪，避免刷新后形象回到默认脸
+      const lastEmotion = [...list]
+        .reverse()
+        .find((item) => item.senderRole === 'assistant' && item.emotion)?.emotion
+      if (lastEmotion) avatarStore.setEmotion(lastEmotion)
     } catch (error) {
       if (seq !== messageSeq) return
       if (!error.isAuthError) {
@@ -253,18 +344,82 @@ export const useChatStore = defineStore('chat', () => {
     sessions.value.unshift(next)
   }
 
+  function handleAct(message, payload) {
+    if (!payload) return
+    if (!Array.isArray(message.acts)) message.acts = []
+    message.acts.push(payload)
+    if (payload.emotion) {
+      message.emotion = payload.emotion
+    }
+
+    // 语音开启时，动作交给播放队列在对应句子开始时执行；
+    // 但如果这句话的 speech 已经先到过（尾随 act），队列不会再取它，立即执行兜底。
+    const voiceWillSpeak = voiceStore.enabled && voiceStore.available
+    const sentenceAlreadyQueued = (message.speechSegments || [])
+      .some((segment) => segment.index === Number(payload.sentenceIndex))
+    if (voiceWillSpeak && !sentenceAlreadyQueued) return
+
+    if (payload.emotion) {
+      avatarStore.playEmotion(payload.emotion, 2400)
+    }
+    if (payload.motion) {
+      avatarStore.playMotion(payload.motion, payload.intensity ?? 0.8)
+    }
+  }
+
+  function handleSpeech(message, payload) {
+    if (!payload || !payload.text) return
+    const index = Number(payload.index) || 0
+    if (!Array.isArray(message.speechSegments)) message.speechSegments = []
+    const segment = {
+      index,
+      text: payload.text,
+      emotion: payload.emotion || null,
+      acts: (message.acts || []).filter((act) => act.sentenceIndex === index)
+    }
+    message.speechSegments.push(segment)
+
+    // 悬浮球底部歌词：只在悬浮球形态显示；面板模式由上方聊天记录窗口展示
+    if (!uiStore.panelMode) {
+      window.desktopBridge?.sendBallLyric?.({
+        text: payload.text,
+        index,
+        emotion: segment.emotion || undefined
+      })
+    }
+    message.lyricSent = true
+
+    if (voiceStore.enabled && voiceStore.available) {
+      enqueueSentence({
+        index,
+        text: payload.text,
+        emotion: segment.emotion,
+        acts: segment.acts,
+        speaker: voiceStore.speaker || undefined
+      })
+    }
+  }
+
   function handleStreamEvent(seq, assistantMessage, event, data) {
     if (seq !== streamSeq) return
     const payload = data || {}
     switch (event) {
       case 'meta':
         runId.value = payload.runId ?? null
+        assistantMessage.lyricSent = false
+        window.desktopBridge?.clearBallLyrics?.()
         if (payload.assistantMessageId != null) {
           assistantMessage.id = payload.assistantMessageId
         }
         break
       case 'delta':
         if (payload.text) assistantMessage.content += payload.text
+        break
+      case 'act':
+        handleAct(assistantMessage, payload)
+        break
+      case 'speech':
+        handleSpeech(assistantMessage, payload)
         break
       case 'tool_start':
         assistantMessage.tools.push({
@@ -284,15 +439,32 @@ export const useChatStore = defineStore('chat', () => {
         }
         break
       }
-      case 'done':
+      case 'done': {
         assistantMessage.streaming = false
         assistantMessage.status = payload.finishReason === 'cancelled' ? 3 : 1
         if (payload.usage && payload.usage.completionTokens != null) {
           assistantMessage.tokens = payload.usage.completionTokens
         }
+        const finalEmotion = parseEmotionPayload(payload.emotion)
+        if (finalEmotion) {
+          assistantMessage.emotion = finalEmotion
+          avatarStore.setEmotion(finalEmotion)
+        }
         streaming.value = false
         runId.value = null
+        // 表演标签关闭时没有 speech 事件，用最终回答兜底一句字幕
+        if (!uiStore.panelMode && !assistantMessage.lyricSent && assistantMessage.content) {
+          const text = assistantMessage.content.replace(/\s+/g, ' ').trim()
+          if (text) {
+            window.desktopBridge?.sendBallLyric?.({
+              text: text.slice(-120),
+              index: 0,
+              final: true
+            })
+          }
+        }
         break
+      }
       case 'error':
         assistantMessage.streaming = false
         assistantMessage.status = 2
@@ -300,6 +472,11 @@ export const useChatStore = defineStore('chat', () => {
         streamError.value = assistantMessage.error
         streaming.value = false
         runId.value = null
+        window.desktopBridge?.clearBallLyrics?.()
+        if (uiStore.panelMode) {
+          window.desktopBridge?.clearBallBubble?.()
+        }
+        stopSpeech()
         break
       default:
         break
@@ -313,6 +490,9 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(rawContent) {
     const content = String(rawContent || '').trim()
     if (!content || streaming.value) return false
+
+    // 新消息视为打断上一轮朗读
+    stopSpeech()
 
     if (!currentSessionId.value) {
       const created = await createSession()
@@ -332,7 +512,7 @@ export const useChatStore = defineStore('chat', () => {
       tools: [],
       error: ''
     }
-    const assistantMessage = {
+    const assistantDraft = {
       clientKey: `local-assistant-${clientMessageId}`,
       senderRole: 'assistant',
       content: '',
@@ -341,11 +521,16 @@ export const useChatStore = defineStore('chat', () => {
       createdAt: nowText(),
       streaming: true,
       tools: [],
+      speechSegments: [],
+      acts: [],
+      emotion: null,
       error: '',
       model: ''
     }
 
-    messages.value.push(userMessage, assistantMessage)
+    messages.value.push(userMessage, assistantDraft)
+    // 必须通过响应式代理更新，否则流式内容不会触发 watcher / 气泡同步
+    const assistantMessage = messages.value[messages.value.length - 1]
     touchSession(sessionId, 2)
 
     const seq = ++streamSeq
@@ -399,6 +584,8 @@ export const useChatStore = defineStore('chat', () => {
         // 后台同步一次会话排序与消息数，失败不影响当前页面
         loadSessions({ silent: true })
       }
+      // 兜底：done/error/中断/异常都完成后强制同步一次最终状态
+      syncReplyBubble()
     }
     return true
   }
@@ -428,6 +615,8 @@ export const useChatStore = defineStore('chat', () => {
     }
     streaming.value = false
     runId.value = null
+    stopSpeech()
+    syncReplyBubble()
     if (activeRunId != null) {
       cancelRun(activeRunId).catch(() => {
         // 后端可能已结束本轮，忽略
@@ -501,6 +690,8 @@ export const useChatStore = defineStore('chat', () => {
     currentSession,
     messages,
     messagesLoading,
+    draft,
+    setDraft,
     loadingMore,
     nextCursor,
     hasMore,

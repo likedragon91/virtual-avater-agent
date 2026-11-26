@@ -21,7 +21,7 @@ Spring Boot 后端：账号体系、Agent 对话（SSE + 工具调用）、任�
 javaweb/
 ├── pom.xml
 ├── mvnw / mvnw.cmd
-├── docs/openapi/                    # OpenAPI 3.0 契约（42 个操作）
+├── docs/openapi/                    # OpenAPI 3.0 契约
 ├── sql/                             # 已废弃的历史手工脚本，仅作记录
 └── src/
     ├── main/java/com/example/javaweb/

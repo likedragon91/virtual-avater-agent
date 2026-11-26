@@ -91,10 +91,14 @@ public class PersonaService {
         return effectiveCode(session, loadPreferences(userId));
     }
 
+    /** 人格/阶段提示词片段 + 解析后的风格强度，供回复风格层复用 verbosity */
+    public record StylePrompt(String text, Traits traits) {
+    }
+
     /**
      * 生成系统提示中的人格/阶段片段。
      */
-    public String buildStylePrompt(Long userId, ChatSession session, ProfileRow profile) {
+    public StylePrompt buildStylePrompt(Long userId, ChatSession session, ProfileRow profile) {
         JSONObject preferences = loadPreferences(userId);
         String code = effectiveCode(session, preferences);
         Preset preset = PersonaCatalog.find(code);
@@ -118,8 +122,7 @@ public class PersonaService {
         prompt.append("示例语气：").append(preset.sample()).append("\n");
         prompt.append("风格强度：\n").append(traitSection(traits));
         prompt.append("\n").append(stageSection(policy, profile));
-        prompt.append("\n人格只决定“怎么说”，阶段边界决定“能说多深”；两者冲突时以阶段边界为准。\n");
-        return prompt.toString();
+        return new StylePrompt(prompt.toString(), traits);
     }
 
     private String effectiveCode(ChatSession session, JSONObject preferences) {
@@ -233,12 +236,15 @@ public class PersonaService {
                 + "- 禁用表达：" + banned + "\n";
     }
 
+    /**
+     * 话量（verbosity）不在这里输出：它由回复风格层换算成长度带内的位置，
+     * 避免系统提示里同时出现两条互相矛盾的长度指令。
+     */
     private static String traitSection(Traits traits) {
         return "- 温柔度 " + fmt(traits.warmth()) + "：" + warmthHint(traits.warmth()) + "\n"
                 + "- 幽默感 " + fmt(traits.humor()) + "：" + humorHint(traits.humor()) + "\n"
                 + "- 直接度 " + fmt(traits.directness()) + "：" + directnessHint(traits.directness()) + "\n"
-                + "- 主动度 " + fmt(traits.initiative()) + "：" + initiativeHint(traits.initiative()) + "\n"
-                + "- 话量 " + fmt(traits.verbosity()) + "：" + verbosityHint(traits.verbosity()) + "\n";
+                + "- 主动度 " + fmt(traits.initiative()) + "：" + initiativeHint(traits.initiative()) + "\n";
     }
 
     private static String warmthHint(double value) {
@@ -263,12 +269,6 @@ public class PersonaService {
         if (value >= 0.7) return "可以主动追问、给建议";
         if (value <= 0.3) return "少主动扩展话题，等对方说";
         return "适度主动";
-    }
-
-    private static String verbosityHint(double value) {
-        if (value >= 0.7) return "可以展开说明";
-        if (value <= 0.3) return "尽量简短";
-        return "长短适中";
     }
 
     private static String fmt(double value) {

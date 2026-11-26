@@ -11,6 +11,12 @@ dist
 dist-ssr
 *.local
 
+# Live2D Cubism Core 为专有运行时，本地放置，不提交
+public/live2d/live2dcubismcore.min.js
+
+# 构建临时目录
+.tmp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

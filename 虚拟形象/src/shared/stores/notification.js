@@ -108,6 +108,15 @@ export const useNotificationStore = defineStore('notification', () => {
               unreadCount.value += 1
               notifications.value = [data, ...notifications.value].slice(0, 50)
               notifyListeners(data)
+              // 任务到点：让悬浮球角色头顶弹出气泡
+              if (data.type === 'TASK_REMINDER') {
+                window.desktopBridge?.sendBallBubble?.({
+                  id: data.id,
+                  title: data.title,
+                  body: data.body,
+                  taskTitle: data.payload?.taskTitle
+                })
+              }
               if (typeof onNotification === 'function') onNotification(data)
             }
           }

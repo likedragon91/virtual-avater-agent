@@ -31,4 +31,15 @@ public class NotificationPushService {
         sseService.push(userId, notification);
         webPushService.sendToUser(userId, notification);
     }
+
+    /**
+     * 系统级通知：不遵循免打扰。用于管理员发布的版本更新等需要立即提示的消息。
+     */
+    public void pushSystem(Long userId, NotificationResponseDTO notification) {
+        if (notification == null) {
+            return;
+        }
+        sseService.push(userId, notification);
+        webPushService.sendToUser(userId, notification);
+    }
 }

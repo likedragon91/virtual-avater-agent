@@ -195,6 +195,7 @@ public class AgentSessionService {
         dto.setStatus(message.getStatus());
         dto.setTokens(message.getTokens());
         dto.setModel(message.getModel());
+        dto.setEmotion(message.getEmotion());
         dto.setCreatedAt(format(message.getCreatedAt()));
         return dto;
     }

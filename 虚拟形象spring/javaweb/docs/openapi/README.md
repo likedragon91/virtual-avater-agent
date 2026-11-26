@@ -6,10 +6,10 @@
 
 | 文件 | 范围 |
 |---|---|
-| `javaweb-api.yaml` | **全量接口**：账号、验证码、Agent 会话、任务与闹钟、亲密度、人格、通知、通知设置、Web Push。前置 URL 已写为 `http://127.0.0.1:1107/api`。 |
+| `javaweb-api.yaml` | **全量接口**：账号、验证码、Agent 会话、任务与闹钟、亲密度、人格、通知、通知设置、Web Push、语音合成、形象配置。前置 URL 已写为 `http://127.0.0.1:1107/api`。 |
 | `agent-workbench.yaml` | 仅 `/api/agent/**` 的 Agent 会话契约（`javaweb-api.yaml` 已包含这部分）。 |
 
-导入 `javaweb-api.yaml` 即可一次性获得项目全部 43 个接口。
+导入 `javaweb-api.yaml` 即可一次性获得项目全部接口。
 
 ## 单一事实来源
 

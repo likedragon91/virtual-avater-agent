@@ -249,8 +249,11 @@ paths:
         - `delta`：`{text}`，可多次
         - `tool_start`：`{callId, tool}`
         - `tool_end`：`{callId, ok, summary}`
-        - `done`：`{runId, messageId, finishReason, usage.completionTokens}`
+        - `done`：`{runId, messageId, finishReason, usage.completionTokens}`，`finishReason` 可能为 `stop`、`length`（达到 max_tokens 被截断）或 `cancelled`
         - `error`：`{code, msg}`
+
+        请求体可选 `responseMode` 显式指定本轮回复风格；为空时后端根据最新一条用户消息自动判断。
+        回复风格只影响长度和排版，不改变工具调用、事实来源与安全规则。
 
         每个 `data` 都是 JSON 字符串，事件之间以空行分隔。
         流建立前的业务错误（越权、重复发送、已归档等）返回 `application/json`。
@@ -405,6 +408,11 @@ components:
           maxLength: 64
           description: 客户端生成的幂等键，建议 UUID；重试时不要复用
           example: 3f2b6c1e-8b7a-4f6e-9a1d-2c3d4e5f6a7b
+        responseMode:
+          type: string
+          description: 可选，显式指定本轮回复模式；为空时由后端自动判断
+          enum: [CASUAL, EMOTIONAL, DISCUSSION, KNOWLEDGE, TASK]
+          example: CASUAL
     ChatSession:
       type: object
       properties:

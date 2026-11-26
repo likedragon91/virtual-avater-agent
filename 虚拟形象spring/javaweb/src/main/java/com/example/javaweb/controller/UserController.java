@@ -19,6 +19,7 @@ import jakarta.validation.Valid;
 import com.example.javaweb.dto.request.UserLoginCommandDTO;
 import com.example.javaweb.common.Result;
 import com.example.javaweb.common.ResultCode;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -108,6 +110,16 @@ public class UserController {
             Authentication authentication) {
         Long userId = currentUserResolver.requireUserId(authentication);
         return userService.updateProfile(userId, commandDTO);
+    }
+
+    //上传用户头像或 AI 头像：multipart/form-data，字段 file + target(user|ai)
+    @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> uploadAvatar(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "target", defaultValue = "user") String target,
+            Authentication authentication) {
+        Long userId = currentUserResolver.requireUserId(authentication);
+        return userService.uploadAvatar(userId, target, file);
     }
 
     //管理员修改用户状态：0-禁用，1-正常

@@ -31,6 +31,9 @@ public class ChatSession {
 
     private LocalDateTime summaryUpdatedAt;
 
+    /** 摘要已覆盖到的最后一条消息 id，用于增量摘要 */
+    private Long summaryMessageId;
+
     private Integer messageCount;
 
     private LocalDateTime lastActiveAt;

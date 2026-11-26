@@ -36,6 +36,8 @@ public class UserLoginResponseDTO {
         private String email;
         private String nickname;
         private String avatar;
+        /** AI 角色头像；与用户头像分开 */
+        private String aiAvatar;
         private String phone;
         private Integer gender;
         private String genderDisplayName;

@@ -37,6 +37,12 @@ tags:
     description: 免打扰窗口、主动消息开关
   - name: Web Push
     description: 浏览器推送订阅与测试
+  - name: 语音
+    description: 火山引擎豆包语音 TTS 配置与合成
+  - name: 形象
+    description: 形象预设、配色与用户形象配置
+  - name: 应用更新
+    description: 桌面端安装包发布、最新版本与检查更新
 security:
   - bearerAuth: []
 paths:
@@ -598,10 +604,12 @@ paths:
 
         事件顺序：
         - `meta`：`{runId, sessionId, assistantMessageId}`
-        - `delta`：`{text}`，可多次
+        - `delta`：`{text}`，可多次；已剥离 `<act/>` 表演标签
+        - `act`：`{emotion?, motion?, intensity, sentenceIndex}`，可多次
+        - `speech`：`{index, text, emotion?}`，按句切分、用于前端 TTS
         - `tool_start`：`{callId, tool}`
         - `tool_end`：`{callId, ok, summary}`
-        - `done`：`{runId, messageId, finishReason, usage.completionTokens}`
+        - `done`：`{runId, messageId, finishReason, usage.completionTokens, speechCount, emotion?}`
         - `error`：`{code, msg}`
 
         每个 `data` 都是 JSON 字符串，事件之间以空行分隔。
@@ -643,8 +651,14 @@ paths:
                     event: delta
                     data: {"text":"你这周还有 3 个任务。"}
 
+                    event: act
+                    data: {"emotion":"joy","motion":"nod","intensity":0.8,"sentenceIndex":0}
+
+                    event: speech
+                    data: {"index":0,"text":"你这周还有 3 个任务。","emotion":"joy"}
+
                     event: done
-                    data: {"runId":12,"messageId":12,"finishReason":"stop","usage":{"completionTokens":256}}
+                    data: {"runId":12,"messageId":12,"finishReason":"stop","usage":{"completionTokens":256},"speechCount":1,"emotion":"{\"emotion\":\"joy\"}"}
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
@@ -1269,6 +1283,364 @@ paths:
                 $ref: '#/components/schemas/ResultInteger'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /tts/config:
+    get:
+      tags: [语音]
+      summary: 语音配置与可用音色
+      operationId: getTtsConfig
+      description: |
+        返回是否启用、供应商、音色列表、音频格式、单条上限与今日剩余额度。
+        不会返回 API Key 或上游地址；未配置密钥时 enabled=false。
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultTtsConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /tts/synthesize:
+    post:
+      tags: [语音]
+      summary: 合成一句语音
+      operationId: synthesizeSpeech
+      description: |
+        合成单句文本并返回音频二进制；默认 `audio/mpeg`。
+        相同文本与音色会命中服务端缓存（响应头 `X-TTS-Cache: HIT`）。
+        失败时返回 HTTP 200 + JSON 错误体（`code` 如 TTS_NOT_CONFIGURED、TTS_QUOTA_EXCEEDED）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TtsSynthesizeRequest'
+            example:
+              text: 今天也辛苦了。
+              speaker: zh_female_vv_uranus_bigtts
+      responses:
+        '200':
+          description: 音频二进制，或 JSON 错误体
+          headers:
+            X-TTS-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+            X-Audio-Sample-Rate:
+              schema:
+                type: integer
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/L16:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /avatar/catalog:
+    get:
+      tags: [形象]
+      summary: 形象预设与配色字段
+      operationId: getAvatarCatalog
+      description: 返回内置像素预设、默认配色、可编辑配色字段与标签。
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAvatarCatalog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /avatar/config:
+    get:
+      tags: [形象]
+      summary: 当前用户形象配置
+      operationId: getAvatarConfig
+      description: 未保存过时返回默认预设、默认配色与 revision=0。
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAvatarConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [形象]
+      summary: 保存形象配置
+      operationId: updateAvatarConfig
+      description: |
+        使用 revision 乐观锁；revision 与当前值不一致时返回 code=AVATAR_CONFIG_CONFLICT。
+        非法颜色或未知键会被服务端过滤。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAvatarConfigRequest'
+            example:
+              presetId: preset_warm
+              palette:
+                hair: '#7a4a2f'
+                top: '#d9825b'
+              revision: 0
+      responses:
+        '200':
+          description: 保存后的配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAvatarConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /user/avatar:
+    post:
+      tags: [账号]
+      summary: 上传用户头像或 AI 头像
+      operationId: uploadAvatar
+      description: |
+        multipart/form-data。target=user 更新用户头像，target=ai 更新 AI 角色头像。
+        图片支持 PNG/JPEG/WebP/GIF，单文件不超过 20MB；返回更新后的用户信息。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                target:
+                  type: string
+                  enum: [user, ai]
+                  default: user
+      responses:
+        '200':
+          description: 更新后的用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultUserDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /avatar/image:
+    post:
+      tags: [形象]
+      summary: 上传单图静态立绘
+      operationId: uploadAvatarImage
+      description: |
+        单张 PNG/JPEG/WebP/GIF（≤20MB）作为 driver=image 的舞台形象。
+        它不是 Live2D 模型，没有骨骼、表情和口型；真正的 Live2D 仍需 model3.json + moc3 的 zip。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: 上传后的静态立绘信息（url 可直接给 img）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAvatarModel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /avatar/live2d:
+    get:
+      tags: [形象]
+      summary: 当前用户导入的形象模型列表（Live2D + 静态立绘）
+      operationId: listAvatarModels
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAvatarModelList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [形象]
+      summary: 上传 Live2D 模型 zip
+      operationId: uploadAvatarModel
+      description: Cubism 3/4/5 的 zip，单文件不超过 20MB；文件必须包含 .model3.json。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: 上传后的模型信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAvatarModel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /avatar/live2d/{id}/file:
+    get:
+      tags: [形象]
+      summary: 下载 Live2D 模型 zip
+      operationId: downloadAvatarModel
+      description: 需要 Authorization；前端取 ArrayBuffer 后交给 live2d-renderer。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: zip 二进制
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /avatar/live2d/{id}:
+    delete:
+      tags: [形象]
+      summary: 删除 Live2D 模型
+      operationId: deleteAvatarModel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /app/version/latest:
+    get:
+      tags: [应用更新]
+      summary: 获取最新桌面端版本
+      operationId: getLatestAppVersion
+      description: 管理员尚未发布版本时 data 为 null。
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAppVersion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /admin/app-versions:
+    get:
+      tags: [应用更新]
+      summary: 已发布版本列表（管理员）
+      operationId: listAppVersions
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAppVersionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [应用更新]
+      summary: 上传并发布桌面端安装包（管理员）
+      operationId: publishAppVersion
+      description: |
+        multipart/form-data。上传即发布；notify=true 时向所有启用用户写入并实时推送
+        APP_UPDATE 通知（不遵循免打扰）。版本号必须大于当前最新版本。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [version, file]
+              properties:
+                version:
+                  type: string
+                  example: 0.1.1
+                notes:
+                  type: string
+                  example: 修复问题并新增检查更新
+                notify:
+                  type: boolean
+                  default: true
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: 发布后的版本信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultAppVersion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/app-versions/{id}:
+    delete:
+      tags: [应用更新]
+      summary: 删除已发布版本（管理员）
+      operationId: deleteAppVersion
+      description: 不能删除当前最新版本。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
 components:
   securitySchemes:
@@ -1510,7 +1882,12 @@ components:
         avatar:
           type: string
           nullable: true
-          example: /files/bussiness/user_avatar/1757687320361.jpg
+          example: /api/files/avatar/3f2b6c1e8b7a4f6e.png
+        aiAvatar:
+          type: string
+          nullable: true
+          description: AI 角色头像，与用户头像分开
+          example: /api/files/ai-avatar/9a1d2c3d4e5f6a7b.png
         phone:
           type: string
           nullable: true
@@ -2649,7 +3026,8 @@ components:
         参数校验失败 HTTP 200、code="-2"；业务错误 HTTP 200、code 为具体业务码。
         常见业务码：UNAUTHORIZED、FORBIDDEN、PARAM_ERROR、NOT_FOUND、
         DUPLICATE_MESSAGE、SESSION_ARCHIVED、AGENT_BUSY、ALREADY_RESPONDED、
-        CORRECTION_EXPIRED。
+        CORRECTION_EXPIRED、AVATAR_CONFIG_CONFLICT、TTS_NOT_CONFIGURED、
+        TTS_QUOTA_EXCEEDED、TTS_TEXT_TOO_LONG、TTS_AUTH_FAILED。
       properties:
         code:
           type: string
@@ -2660,3 +3038,296 @@ components:
         data:
           nullable: true
           example: null
+    TtsVoice:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        language:
+          type: string
+        gender:
+          type: string
+          nullable: true
+    TtsConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: 是否开放语音入口（tts.enabled）
+        configured:
+          type: boolean
+          description: 是否已配置密钥与音色；false 时合成返回 TTS_NOT_CONFIGURED
+        provider:
+          type: string
+          example: volcengine
+        defaultSpeaker:
+          type: string
+        format:
+          type: string
+          example: mp3
+        sampleRate:
+          type: integer
+          example: 24000
+        maxCharsPerRequest:
+          type: integer
+          example: 300
+        dailyCharQuota:
+          type: integer
+          example: 5000
+        usedChars:
+          type: integer
+        remainingChars:
+          type: integer
+          description: -1 表示未启用日配额
+        voices:
+          type: array
+          items:
+            $ref: '#/components/schemas/TtsVoice'
+    ResultTtsConfig:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200'
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/TtsConfig'
+    TtsSynthesizeRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          maxLength: 300
+          example: 今天也辛苦了。
+        speaker:
+          type: string
+          description: 控制台音色 ID；不传使用服务端默认音色
+          example: zh_female_vv_uranus_bigtts
+        speed:
+          type: integer
+          minimum: -50
+          maximum: 100
+          example: 0
+    AvatarPreset:
+      type: object
+      properties:
+        id:
+          type: string
+          example: preset_warm
+        name:
+          type: string
+          example: 暖阳
+        description:
+          type: string
+        palette:
+          type: object
+          additionalProperties:
+            type: string
+    AvatarPaletteField:
+      type: object
+      properties:
+        key:
+          type: string
+          example: hair
+        label:
+          type: string
+          example: 头发
+    AvatarCatalog:
+      type: object
+      properties:
+        driver:
+          type: string
+          example: pixel
+        defaultPresetId:
+          type: string
+          example: preset_default
+        defaultPalette:
+          type: object
+          additionalProperties:
+            type: string
+        paletteFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvatarPaletteField'
+        presets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvatarPreset'
+    ResultAvatarCatalog:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200'
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/AvatarCatalog'
+    AvatarConfig:
+      type: object
+      properties:
+        driver:
+          type: string
+          enum: [pixel, live2d, image]
+          example: pixel
+        presetId:
+          type: string
+          example: preset_warm
+        palette:
+          type: object
+          additionalProperties:
+            type: string
+        modelId:
+          type: integer
+          format: int64
+          nullable: true
+          description: driver=live2d/image 时使用
+        modelName:
+          type: string
+          nullable: true
+        modelUrl:
+          type: string
+          nullable: true
+          description: driver=image 时的公开图片地址
+        revision:
+          type: integer
+          description: 乐观锁版本；未保存过为 0
+        updatedAt:
+          type: string
+          nullable: true
+    ResultAvatarConfig:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200'
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/AvatarConfig'
+    UpdateAvatarConfigRequest:
+      type: object
+      properties:
+        driver:
+          type: string
+          enum: [pixel, live2d, image]
+          description: 为空时按 modelId 推断
+        presetId:
+          type: string
+          maxLength: 32
+        modelId:
+          type: integer
+          format: int64
+          description: driver=live2d/image 时必填，必须是当前用户导入的对应模型
+        palette:
+          type: object
+          additionalProperties:
+            type: string
+        revision:
+          type: integer
+          description: 乐观锁版本；首次保存传 0
+    AvatarModel:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          example: 我的 Live2D
+        driver:
+          type: string
+          enum: [live2d, image]
+          example: live2d
+        url:
+          type: string
+          nullable: true
+          description: driver=image 时的公开图片地址；zip 模型为空
+          example: /api/files/avatar-image/3f2b6c1e8b7a4f6e.png
+        size:
+          type: integer
+          format: int64
+          example: 8388608
+        createdAt:
+          type: string
+          nullable: true
+    ResultAvatarModel:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200'
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/AvatarModel'
+    ResultAvatarModelList:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200'
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvatarModel'
+    AppVersion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        version:
+          type: string
+          example: 0.1.1
+        notes:
+          type: string
+          nullable: true
+        fileName:
+          type: string
+          example: 虚拟形象 Setup 0.1.1.exe
+        fileSize:
+          type: integer
+          format: int64
+          example: 104857600
+        downloadUrl:
+          type: string
+          example: /api/files/updates/3f2b6c1e8b7a4f6e.exe
+        createdAt:
+          type: string
+          nullable: true
+    ResultAppVersion:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200'
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          $ref: '#/components/schemas/AppVersion'
+    ResultAppVersionList:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200'
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppVersion'

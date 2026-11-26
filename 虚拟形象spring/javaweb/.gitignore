@@ -10,6 +10,9 @@ application-local.properties
 application-*.properties
 !application.properties.example
 
+### 本地上传文件（头像 / Live2D zip） ###
+uploads/
+
 ### STS ###
 .apt_generated
 .classpath

@@ -73,8 +73,16 @@ let pollTimer = null
 let dueTimer = null
 let unsubscribeNotifications = null
 
+// 待回应只放真正需要回应的；已回应的移出，改在任务列表的“最近回应”里查看/修正
 const activeOccurrences = computed(() =>
-  occurrences.value.filter((item) => item.canRespond || item.canCorrect)
+  occurrences.value.filter((item) => item.canRespond)
+)
+
+const respondedOccurrences = computed(() =>
+  occurrences.value
+    .filter((item) => item.status === 'RESPONDED')
+    .sort((a, b) => String(b.respondedAt || '').localeCompare(String(a.respondedAt || '')))
+    .slice(0, 8)
 )
 const stageName = computed(() => relationship.value?.stageName || '初识')
 const intimacyTotal = computed(() => Number(relationship.value?.intimacyTotal || 0))
@@ -352,7 +360,7 @@ async function submitResponse() {
     })
     responseResult.value = result
     ElMessage.success(result.corrected ? '修正成功' : '已记录，谢谢你的回应')
-    await Promise.all([loadOccurrences(), loadRelationship()])
+    await Promise.all([loadOccurrences(), loadRelationship(), loadTasks()])
   } catch (error) {
     ElMessage.error(error.message || '提交失败')
   } finally {
@@ -483,26 +491,15 @@ onBeforeUnmount(() => {
               <div class="occurrence-meta">
                 <el-icon><Timer /></el-icon>
                 {{ item.occurAt }}
-                <span v-if="item.status === 'RESPONDED'">
-                  · 已评 {{ item.completionRatio }}%
-                </span>
               </div>
             </div>
             <div class="occurrence-actions">
               <el-button
-                v-if="item.canRespond"
                 type="primary"
                 size="small"
                 @click="openResponse(item, false)"
               >
                 回应
-              </el-button>
-              <el-button
-                v-else-if="item.canCorrect"
-                size="small"
-                @click="openResponse(item, true)"
-              >
-                修正
               </el-button>
             </div>
           </div>
@@ -576,6 +573,41 @@ onBeforeUnmount(() => {
           </template>
         </el-table-column>
         </el-table>
+      </div>
+
+      <div v-if="respondedOccurrences.length" class="responded-section">
+        <div class="responded-header">最近回应</div>
+        <div class="occurrence-list">
+          <div
+            v-for="item in respondedOccurrences"
+            :key="`responded-${item.id}`"
+            class="occurrence-item"
+          >
+            <div class="occurrence-main">
+              <div class="occurrence-title">
+                {{ item.title }}
+                <el-tag :type="occurrenceTagType(item.status)" size="small">
+                  {{ item.statusLabel }}
+                </el-tag>
+                <el-tag v-if="item.late" type="danger" size="small">补评</el-tag>
+              </div>
+              <div class="occurrence-meta">
+                <el-icon><Timer /></el-icon>
+                回应于 {{ item.respondedAt || item.occurAt }}
+                <span>· 完成度 {{ item.completionRatio }}%</span>
+              </div>
+            </div>
+            <div class="occurrence-actions">
+              <el-button
+                v-if="item.canCorrect"
+                size="small"
+                @click="openResponse(item, true)"
+              >
+                修正
+              </el-button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="pagination">
@@ -857,6 +889,19 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.responded-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.responded-header {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-regular);
 }
 
 .occurrence-item {

@@ -63,6 +63,18 @@ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-
 - 二次启动会唤起已有实例（单实例锁）。
 - 主窗口聚焦时通知走站内弹窗；隐藏/失焦时通过 IPC 调用 Windows 原生通知，点击通知会展开窗口并跳转任务页。
 
+## 检查更新与版本
+
+- 版本号来源：`虚拟形象/package.json` 的 `version`。构建时写入前端全局 `__APP_VERSION__`；
+  Electron 运行时通过 `app.getVersion()`（preload 暴露为 `desktopBridge.appVersion()`）读取。
+- 服务器更新（后端 / 网页 `dist`）**不会修改已安装的 Electron 包**；桌面端需要下载并安装新包。
+- 管理员在网页端「管理 → 应用更新」上传新的 `虚拟形象 Setup <version>.exe` 并发布，
+  系统会向所有启用用户推送 `APP_UPDATE` 通知。
+- 用户在左侧栏底部「检查更新」（或设置页）查看当前/最新版本、更新说明并下载安装包。
+- 首次启用更新功能仍需手动分发新安装包；之后的版本可以通过「检查更新」页下载。
+- 发布前先提升 `package.json` 版本并重新打包；管理员填写的版本号必须与安装包一致。
+- `.env.desktop` 的 API 地址在打包时写死；服务器域名/IP 变化后必须重新打包。
+
 ## 安全设计
 
 - `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`。

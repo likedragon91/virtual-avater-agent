@@ -11,5 +11,7 @@ public class ChatMessageResponseDTO {
     private Integer status;
     private Integer tokens;
     private String model;
+    /** 情绪 JSON，如 {"emotion":"joy"}；历史里用于恢复表情 */
+    private String emotion;
     private String createdAt;
 }

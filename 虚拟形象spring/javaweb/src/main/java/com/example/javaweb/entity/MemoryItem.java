@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 
 /**
  * 记忆条目。memory_type 受数据库 CHECK 限制：
- * PROFILE / PREFERENCE / EPISODE / RELATION / PROMISE。
+ * PROFILE / PREFERENCE / EPISODE / RELATION / PROMISE / FACT。
  */
 @Data
 @TableName("memory_item")
@@ -34,7 +34,13 @@ public class MemoryItem {
 
     private BigDecimal confidence;
 
+    /** USER_STATED / INFERRED / EXTRACTED */
+    private String sourceType;
+
     private LocalDateTime occurredAt;
+
+    /** 可选的过期时间；过期后不再进入检索 */
+    private LocalDateTime expiresAt;
 
     private Long sourceMessageId;
 
@@ -48,6 +54,16 @@ public class MemoryItem {
 
     /** ACTIVE / PENDING / ARCHIVED / DELETED */
     private String status;
+
+    /** 被哪条新记忆替代；配合 status=ARCHIVED 保留历史 */
+    private Long supersededBy;
+
+    /** float32 小端向量；未配置 embedding 时为 NULL */
+    private byte[] embedding;
+
+    private String embeddingModel;
+
+    private Integer embeddingDim;
 
     private LocalDateTime createdAt;
 

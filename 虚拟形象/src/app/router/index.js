@@ -63,6 +63,12 @@ const routes = [
         meta: { title: '设置' }
       },
       {
+        path: 'update',
+        name: 'Update',
+        component: () => import('@/features/update/views/UpdateView.vue'),
+        meta: { title: '检查更新' }
+      },
+      {
         path: 'admin/users',
         name: 'AdminUsers',
         component: () => import('@/features/admin/views/UserManageView.vue'),
@@ -73,6 +79,12 @@ const routes = [
         name: 'AdminOnline',
         component: () => import('@/features/admin/views/OnlineUsersView.vue'),
         meta: { title: '在线用户', requiresAdmin: true }
+      },
+      {
+        path: 'admin/update',
+        name: 'AdminUpdate',
+        component: () => import('@/features/admin/views/AppUpdateView.vue'),
+        meta: { title: '应用更新', requiresAdmin: true }
       }
     ]
   },

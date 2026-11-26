@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeftBold,
@@ -9,27 +9,54 @@ import {
   Delete,
   EditPen,
   FolderRemove,
+  Headset,
   Loading,
   MoreFilled,
+  Mute,
   Plus,
-  Promotion,
   User,
   Warning
 } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import PixelStage from '@/features/avatar/components/PixelStage.vue'
+import StageHost from '@/features/avatar/components/StageHost.vue'
+import ChatComposer from '@/features/chat/components/ChatComposer.vue'
+import { ASSET_BASE_URL } from '@/shared/api/config'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { useAuthStore } from '@/shared/stores/auth'
+import { useAvatarStore } from '@/shared/stores/avatar'
 import { useChatStore } from '@/shared/stores/chat'
+import { useVoiceStore } from '@/shared/stores/voice'
 import { getCurrentPersona, getPersonaOptions } from '@/shared/api/persona'
 
 marked.setOptions({ gfm: true, breaks: true })
 
 const authStore = useAuthStore()
+const avatarStore = useAvatarStore()
 const chat = useChatStore()
+const voiceStore = useVoiceStore()
 
-const draft = ref('')
+const stageTagText = computed(() => {
+  const driver = avatarStore.avatarConfig?.driver || 'pixel'
+  if (driver === 'live2d') return 'Live2D'
+  if (driver === 'image') return '静态立绘'
+  return '像素'
+})
+const stageTagType = computed(() => {
+  const driver = avatarStore.avatarConfig?.driver || 'pixel'
+  if (driver === 'live2d') return 'primary'
+  if (driver === 'image') return 'success'
+  return 'info'
+})
+
+function assetUrl(path) {
+  if (!path) return ''
+  return /^https?:\/\//.test(path) ? path : `${ASSET_BASE_URL}${path}`
+}
+
+const aiAvatarUrl = computed(() => assetUrl(authStore.userInfo.aiAvatar))
+const userAvatarUrl = computed(() => assetUrl(authStore.userInfo.avatar))
+
 const composerRef = ref(null)
 const scrollRef = ref(null)
 const stickToBottom = ref(true)
@@ -78,8 +105,6 @@ const newSessionDialogVisible = ref(false)
 const newSessionTitle = ref('')
 const newSessionPersonaCode = ref('default')
 const newSessionCreating = ref(false)
-
-const canSend = computed(() => Boolean(draft.value.trim()) && !chat.streaming)
 
 const currentPersonaName = computed(() => {
   const code = chat.currentSession?.personaCode
@@ -284,32 +309,32 @@ async function handleLoadOlder() {
   }
 }
 
-async function handleSend() {
-  if (chat.streaming) return
-  const content = draft.value.trim()
-  if (!content) return
-  if (content.length > 8000) {
-    ElMessage.warning('单条消息不能超过 8000 字')
-    return
+async function toggleVoice() {
+  const ok = await voiceStore.toggle()
+  if (!ok) {
+    ElMessage.warning(voiceStore.loadError || '服务器未配置语音合成')
   }
-  draft.value = ''
+}
+
+async function handleSent() {
   stickToBottom.value = true
-  const started = await chat.sendMessage(content)
-  if (!started) draft.value = content
   await scrollToBottom(true)
 }
 
-function onComposerKeydown(event) {
-  if (event.key !== 'Enter') return
-  // 输入法组合期间的回车不发送
-  if (event.shiftKey || event.isComposing || event.keyCode === 229) return
-  event.preventDefault()
-  handleSend()
+// 流式输出逐 token 变化，用 rAF 合并滚动，避免每个 token 都触发一次滚动
+let scrollFrame = 0
+
+function scheduleScrollToBottom(force = false) {
+  if (scrollFrame) return
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = 0
+    scrollToBottom(force)
+  })
 }
 
-function handleStop() {
-  chat.stopStreaming()
-}
+onBeforeUnmount(() => {
+  if (scrollFrame) cancelAnimationFrame(scrollFrame)
+})
 
 watch(
   () => {
@@ -317,7 +342,7 @@ watch(
     const last = list[list.length - 1]
     return `${list.length}:${last ? last.content.length : 0}:${last ? last.tools.length : 0}`
   },
-  () => scrollToBottom()
+  () => scheduleScrollToBottom()
 )
 
 watch(
@@ -334,7 +359,12 @@ watch(
 
 onMounted(async () => {
   const owner = authStore.userInfo.username || authStore.userInfo.id || 'anonymous'
-  await Promise.all([chat.initialize(owner), loadPersonaOptions()])
+  await Promise.all([
+    chat.initialize(owner),
+    loadPersonaOptions(),
+    voiceStore.loadConfig(true),
+    avatarStore.loadAvatarConfig(true)
+  ])
   await scrollToBottom(true)
 })
 </script>
@@ -512,8 +542,13 @@ onMounted(async () => {
             class="msg-row"
             :class="message.senderRole"
           >
-            <el-avatar v-if="message.senderRole === 'assistant'" :size="34" class="msg-avatar">
-              角
+            <el-avatar
+              v-if="message.senderRole === 'assistant'"
+              :size="34"
+              class="msg-avatar"
+              :src="aiAvatarUrl || undefined"
+            >
+              <span v-if="!aiAvatarUrl">角</span>
             </el-avatar>
 
             <div class="msg-main">
@@ -578,40 +613,19 @@ onMounted(async () => {
               </div>
             </div>
 
-            <el-avatar v-if="message.senderRole === 'user'" :size="34" class="msg-avatar user">
-              {{ authStore.displayName.slice(0, 1) }}
+            <el-avatar
+              v-if="message.senderRole === 'user'"
+              :size="34"
+              class="msg-avatar user"
+              :src="userAvatarUrl || undefined"
+            >
+              <span v-if="!userAvatarUrl">{{ authStore.displayName.slice(0, 1) }}</span>
             </el-avatar>
           </div>
         </div>
       </div>
 
-      <div class="composer">
-        <el-input
-          ref="composerRef"
-          v-model="draft"
-          type="textarea"
-          resize="none"
-          :autosize="{ minRows: 1, maxRows: 5 }"
-          maxlength="8000"
-          show-word-limit
-          :disabled="chat.messagesLoading"
-          placeholder="说点什么… Enter 发送，Shift + Enter 换行"
-          @keydown="onComposerKeydown"
-        />
-        <div class="composer-actions">
-          <el-button
-            v-if="chat.streaming"
-            type="danger"
-            plain
-            @click="handleStop"
-          >
-            停止生成
-          </el-button>
-          <el-button v-else type="primary" :icon="Promotion" :disabled="!canSend" @click="handleSend">
-            发送
-          </el-button>
-        </div>
-      </div>
+      <ChatComposer ref="composerRef" @sent="handleSent" />
     </section>
 
     <!-- 右侧：虚拟形象（窄屏下按需挂载为底部浮层） -->
@@ -625,12 +639,31 @@ onMounted(async () => {
         <span class="stage-title">虚拟形象</span>
         <div class="stage-head-actions">
           <span class="stage-tip">点击角色互动</span>
+          <el-tag size="small" effect="plain" :type="stageTagType">
+            {{ stageTagText }}
+          </el-tag>
+          <el-tooltip
+            :content="voiceStore.available
+              ? (voiceStore.enabled ? '关闭语音朗读' : '开启语音朗读')
+              : '服务器未配置语音'"
+            placement="bottom"
+          >
+            <el-button
+              text
+              circle
+              size="small"
+              :icon="voiceStore.enabled ? Headset : Mute"
+              :disabled="!voiceStore.available"
+              aria-label="语音朗读"
+              @click="toggleVoice"
+            />
+          </el-tooltip>
           <el-tooltip content="收起虚拟形象" placement="bottom">
             <el-button text circle size="small" :icon="ArrowRightBold" @click="toggleStage" />
           </el-tooltip>
         </div>
       </header>
-      <PixelStage fill />
+      <StageHost fill />
     </section>
 
     <el-dialog
@@ -1062,19 +1095,6 @@ onMounted(async () => {
   border: 1px solid var(--el-border-color-lighter);
 }
 
-/* 输入区 */
-.composer {
-  padding: 12px 16px 14px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  background: #fff;
-}
-
-.composer-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-
 /* 右侧形象 */
 .stage-card {
   display: flex;
@@ -1255,14 +1275,6 @@ onMounted(async () => {
 
   .chat-head {
     padding: 8px 10px;
-  }
-
-  .composer {
-    padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
-  }
-
-  .composer-actions .el-button {
-    min-height: 44px;
   }
 }
 

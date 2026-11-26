@@ -18,10 +18,12 @@ import com.example.javaweb.enums.UserStatus;
 import com.example.javaweb.enums.UserType;
 import com.example.javaweb.exception.BusinessException;
 import com.example.javaweb.mapper.UserMapper;
+import com.example.javaweb.mapper.UserProfileMapper;
 import com.example.javaweb.util.JWTTokenUtil;
 import com.example.javaweb.util.Sm3Util;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import com.example.javaweb.common.Result;
 import com.example.javaweb.common.ResultCode;
 
@@ -44,6 +46,12 @@ public class UserService {
 
     @Resource
     private UserMapper userMapper;
+
+    @Resource
+    private UserProfileMapper userProfileMapper;
+
+    @Resource
+    private FileStorageService fileStorageService;
 
     @Resource
     private JWTTokenUtil jwtTokenUtil;
@@ -167,7 +175,7 @@ public class UserService {
 
         //实体转响应 DTO
         List<UserLoginResponseDTO.UserDetailResponseDTO> records = users.stream()
-                .map(UserService::toUserDetail)
+                .map(this::toUserDetail)
                 .collect(Collectors.toList());
 
         UserListResponseDTO result = new UserListResponseDTO();
@@ -308,8 +316,16 @@ public class UserService {
         return Result.success(dto);
     }
 
-    //把用户实体转换成响应数据（login / register / message 共用）
-    private static UserLoginResponseDTO.UserDetailResponseDTO toUserDetail(User user) {
+    //把用户实体转换成响应数据（login / register / message 共用），并补充 AI 头像
+    private UserLoginResponseDTO.UserDetailResponseDTO toUserDetail(User user) {
+        UserLoginResponseDTO.UserDetailResponseDTO userInfo = toUserDetailBase(user);
+        if (user != null && user.getId() != null) {
+            userInfo.setAiAvatar(userProfileMapper.selectAiAvatar(user.getId()));
+        }
+        return userInfo;
+    }
+
+    private static UserLoginResponseDTO.UserDetailResponseDTO toUserDetailBase(User user) {
         UserLoginResponseDTO.UserDetailResponseDTO userInfo = new UserLoginResponseDTO.UserDetailResponseDTO();
         userInfo.setId(user.getId());
         userInfo.setUsername(user.getUsername());
@@ -418,6 +434,31 @@ public class UserService {
         user.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(user);
         userAuthStateService.evict(userId);
+        return Result.success(toUserDetail(user));
+    }
+
+    /**
+     * 上传用户头像或 AI 头像。target=user|ai，文件由 FileStorageService 校验并落盘。
+     */
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> uploadAvatar(
+            Long userId, String target, MultipartFile file) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        String normalized = target == null ? "user" : target.trim().toLowerCase();
+        if ("ai".equals(normalized)) {
+            FileStorageService.StoredFile stored = fileStorageService.storeImage(file, "ai-avatar");
+            userProfileMapper.upsertAiAvatar(userId, stored.url());
+        } else if ("user".equals(normalized)) {
+            FileStorageService.StoredFile stored = fileStorageService.storeImage(file, "avatar");
+            user.setAvatar(stored.url());
+            user.setUpdatedAt(LocalDateTime.now());
+            userMapper.updateById(user);
+            userAuthStateService.evict(userId);
+        } else {
+            throw new BusinessException("PARAM_ERROR", "target 仅支持 user 或 ai");
+        }
         return Result.success(toUserDetail(user));
     }
 

@@ -4,6 +4,7 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.javaweb.agent.memory.EmbeddingService;
 import com.example.javaweb.dto.projection.MemoryRow;
 import com.example.javaweb.dto.projection.ProfileRow;
 import com.example.javaweb.dto.projection.TaskRow;
@@ -62,6 +63,9 @@ public class AgentToolService {
 
     @Resource
     private MemoryMapper memoryMapper;
+
+    @Resource
+    private EmbeddingService embeddingService;
 
     @Resource
     private ChatMessageMapper chatMessageMapper;
@@ -385,11 +389,14 @@ public class AgentToolService {
         item.setStructured(structured.isEmpty() ? null : structured.toString());
         item.setImportance(importance);
         item.setConfidence(BigDecimal.ONE);
+        item.setSourceType("EXTRACTED");
         item.setOccurredAt(dueAt != null ? dueAt : LocalDateTime.now());
         item.setSourceMessageId(context.getUserMessageId());
         item.setDecayScore(BigDecimal.ONE);
         item.setStatus("ACTIVE");
         memoryMapper.insert(item);
+        // 向量补齐不阻塞工具返回；未配置 embedding 时是 no-op
+        embeddingService.embedAsync(item.getId(), item.getContent());
 
         JSONObject data = new JSONObject();
         data.set("saved", true);

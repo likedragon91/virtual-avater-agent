@@ -98,6 +98,21 @@ export function updateProfile(data) {
 }
 
 /**
+ * 上传头像（multipart/form-data）
+ * @param {File} file 图片文件，后端限制 20MB
+ * @param {'user'|'ai'} target user-用户头像，ai-AI 角色头像
+ */
+export function uploadAvatar(file, target = 'user') {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('target', target)
+  return request(`${API_BASE_URL}/user/avatar`, {
+    method: 'POST',
+    body: form
+  })
+}
+
+/**
  * 管理员修改用户状态
  * @param {number} id
  * @param {number} status 0-禁用，1-正常

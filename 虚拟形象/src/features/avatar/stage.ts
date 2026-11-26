@@ -51,13 +51,17 @@ export function getStageScale(container: HTMLElement): number {
 export function fitStage(
   container: HTMLElement,
   canvas: HTMLCanvasElement,
-  { fill = false, gutter = 0 }: { fill?: boolean; gutter?: number } = {}
+  {
+    fill = false,
+    gutter = 0,
+    minScale = 1
+  }: { fill?: boolean; gutter?: number; minScale?: number } = {}
 ): number {
   const width = (container.clientWidth || STAGE_SIZE) - gutter
   const height = (container.clientHeight || STAGE_SIZE) - gutter
   const scale = fill
-    ? Math.max(1, Math.min(width, height) / STAGE_SIZE)
-    : Math.max(1, Math.floor(width / STAGE_SIZE))
+    ? Math.max(minScale, Math.min(width, height) / STAGE_SIZE)
+    : Math.max(minScale, Math.floor(width / STAGE_SIZE))
 
   const rounded = Math.round(scale * 100) / 100
   canvas.style.width = `${STAGE_SIZE * rounded}px`

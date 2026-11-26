@@ -2,19 +2,29 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
-import { UserFilled, SwitchButton, ChatDotRound, Calendar, Setting, User, Monitor, Fold, Expand, Star, Bell, Menu } from '@element-plus/icons-vue'
+import { UserFilled, SwitchButton, ChatDotRound, Calendar, Setting, User, Monitor, Fold, Expand, Star, Bell, Menu, Brush, Refresh, Upload } from '@element-plus/icons-vue'
 import { getUserMessage } from '@/shared/api/user'
 import { ASSET_BASE_URL } from '@/shared/api/config'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { isDesktopApp, notifySystem, onSystemNotificationClick } from '@/shared/utils/desktop-notify'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useNotificationStore } from '@/shared/stores/notification'
+import { useUiStore } from '@/shared/stores/ui'
+import ChatComposer from '@/features/chat/components/ChatComposer.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const notificationStore = useNotificationStore()
+const uiStore = useUiStore()
+let stopPanelMode = null
 const notificationPopoverRef = ref()
+
+// 面板模式要在首帧就确定：新建面板窗口时先拿到同步值，避免闪一下当前路由页面
+const initialPanelMode = window.desktopBridge?.getPanelModeSync?.()
+if (typeof initialPanelMode === 'boolean') {
+  uiStore.setPanelMode(initialPanelMode)
+}
 
 const activeMenu = computed(() => route.path)
 
@@ -93,6 +103,9 @@ async function handleNotificationClick(item) {
   if (item.type === 'TASK_REMINDER') {
     router.push('/task')
   }
+  if (item.type === 'APP_UPDATE') {
+    router.push('/update')
+  }
 }
 
 function handleMarkAllRead() {
@@ -118,6 +131,13 @@ function windowIsActive() {
 let stopSystemNotificationClick = () => {}
 
 onMounted(async () => {
+  if (window.desktopBridge?.getPanelMode) {
+    const panelMode = await window.desktopBridge.getPanelMode().catch(() => false)
+    uiStore.setPanelMode(Boolean(panelMode))
+  }
+  stopPanelMode = window.desktopBridge?.onPanelMode?.((value) => {
+    uiStore.setPanelMode(value)
+  })
   await loadCurrentUser()
   await notificationStore.loadUnread()
   notificationStore.startStream((notification) => {
@@ -132,7 +152,7 @@ onMounted(async () => {
       duration: 8000,
       onClick: () => {
         notificationStore.markRead(notification.id)
-        router.push('/task')
+        router.push(notification.type === 'APP_UPDATE' ? '/update' : '/task')
       }
     })
   })
@@ -142,18 +162,24 @@ onMounted(async () => {
     if (!payload) return
     if (payload.id) notificationStore.markRead(payload.id)
     if (payload.type === 'TASK_REMINDER') router.push('/task')
+    if (payload.type === 'APP_UPDATE') router.push('/update')
   })
 })
 
 onBeforeUnmount(() => {
   stopSystemNotificationClick()
+  stopPanelMode?.()
   notificationStore.stopStream()
 })
 </script>
 
 <template>
-  <div class="common-layout">
-    <el-container class="layout-container">
+  <div class="common-layout" :class="{ 'is-panel': uiStore.panelMode }">
+    <!-- 左侧对话框：主窗口只渲染聊天输入框，内容与当前路由无关 -->
+    <div v-if="uiStore.panelMode" class="panel-shell">
+      <ChatComposer panel autofocus />
+    </div>
+    <el-container v-else class="layout-container">
       <el-header class="layout-header">
         <div class="header-left">
           <el-tooltip
@@ -300,6 +326,10 @@ onBeforeUnmount(() => {
               <el-icon><Star /></el-icon>
               <span>关系</span>
             </el-menu-item>
+            <el-menu-item index="/wardrobe">
+              <el-icon><Brush /></el-icon>
+              <span>衣橱</span>
+            </el-menu-item>
             <el-menu-item index="/settings">
               <el-icon><Setting /></el-icon>
               <span>设置</span>
@@ -315,7 +345,15 @@ onBeforeUnmount(() => {
                 <el-icon><Monitor /></el-icon>
                 <span>在线用户</span>
               </el-menu-item>
+              <el-menu-item index="/admin/update">
+                <el-icon><Upload /></el-icon>
+                <span>应用更新</span>
+              </el-menu-item>
             </template>
+            <el-menu-item index="/update" class="menu-update">
+              <el-icon><Refresh /></el-icon>
+              <span>检查更新</span>
+            </el-menu-item>
           </el-menu>
         </el-aside>
 
@@ -330,6 +368,23 @@ onBeforeUnmount(() => {
 <style scoped>
 .common-layout {
   height: 100vh;
+}
+
+/* 左侧对话框模式：主窗口只保留聊天输入框 */
+.common-layout.is-panel {
+  height: 100vh;
+  overflow: hidden;
+  background: #fff;
+}
+
+.panel-shell {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.panel-shell :deep(.composer) {
+  flex: 1;
 }
 
 .layout-container {
@@ -407,7 +462,14 @@ onBeforeUnmount(() => {
 }
 
 .aside-menu {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   border-right: none;
+}
+
+.aside-menu :deep(.menu-update) {
+  margin-top: auto;
 }
 
 .menu-divider {

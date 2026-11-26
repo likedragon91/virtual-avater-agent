@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDateTime;
+
 @Mapper
 public interface ChatSessionMapper extends BaseMapper<ChatSession> {
 
@@ -18,4 +20,15 @@ public interface ChatSessionMapper extends BaseMapper<ChatSession> {
     int touch(@Param("sessionId") Long sessionId,
               @Param("userId") Long userId,
               @Param("delta") int delta);
+
+    /**
+     * 只更新摘要相关列，避免整行回写覆盖并发修改。
+     */
+    @Update("UPDATE chat_session SET summary = #{summary}, " +
+            "summary_message_id = #{summaryMessageId}, summary_updated_at = #{updatedAt} " +
+            "WHERE id = #{sessionId}")
+    int updateSummary(@Param("sessionId") Long sessionId,
+                      @Param("summary") String summary,
+                      @Param("summaryMessageId") Long summaryMessageId,
+                      @Param("updatedAt") LocalDateTime updatedAt);
 }

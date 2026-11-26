@@ -25,6 +25,13 @@ public interface UserProfileMapper {
             "FROM user_profile WHERE user_id = #{userId}")
     NotificationSettingsRow selectNotificationSettings(@Param("userId") Long userId);
 
+    @Select("SELECT ai_avatar FROM user_profile WHERE user_id = #{userId}")
+    String selectAiAvatar(@Param("userId") Long userId);
+
+    @Insert("INSERT INTO user_profile (user_id, ai_avatar) VALUES (#{userId}, #{aiAvatar}) " +
+            "ON DUPLICATE KEY UPDATE ai_avatar = VALUES(ai_avatar)")
+    int upsertAiAvatar(@Param("userId") Long userId, @Param("aiAvatar") String aiAvatar);
+
     @Update("UPDATE user_profile SET dnd_start = #{dndStart}, dnd_end = #{dndEnd}, " +
             "proactive_enabled = #{proactiveEnabled} WHERE user_id = #{userId}")
     int updateNotificationSettings(@Param("userId") Long userId,

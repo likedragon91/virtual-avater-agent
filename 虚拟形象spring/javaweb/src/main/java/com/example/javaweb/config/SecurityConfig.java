@@ -38,7 +38,9 @@ public class SecurityConfig {
             "/api/user/refresh",
             "/api/user/logout",
             "/api/user/password/forgot",
-            "/api/user/password/reset"
+            "/api/user/password/reset",
+            // 头像图片通过 img 标签直接加载，文件名是 UUID，内容经过类型/魔数校验
+            "/api/files/**"
     };
 
     @Bean
